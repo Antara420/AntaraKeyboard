@@ -2,261 +2,488 @@ package com.example.antarakeyboard
 
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.os.Handler
 import android.util.Log
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
-import android.widget.GridLayout
+import android.widget.LinearLayout
 
 class MyKeyboardService : InputMethodService() {
 
     private var isShifted = false
-    private val backspaceHandler = android.os.Handler()
+    private var isNumericMode = false
+    private var isHexagonMode = false // Opcija za heksagone
+
+    private val backspaceHandler = Handler()
     private var backspaceRunnable: Runnable? = null
 
+    private lateinit var rootView: View
+    private lateinit var keyboardContainer: LinearLayout
+
+    // Redovi slova prema tvom zahtjevu
+    private val row1Letters = "WETZIO"
+    private val row2Letters = "QARGULP"
+    private val row4Letters = "YSDNMJK"
+    private val row5Letters = "XCVB"
 
     override fun onCreateInputView(): View {
-        Log.d("ANTARA_KB", "onCreateInputView called")
+        rootView = layoutInflater.inflate(R.layout.keyboard_view, null)
+        keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
 
-        // Inflate layout
-        val view = layoutInflater.inflate(R.layout.keyboard_view, null)
-
-        // Podešavanje paddinga za navigacijske tipke (API 30+ i fallback za niže)
-        view.setOnApplyWindowInsetsListener { v, insets ->
-            val navBarHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        rootView.setOnApplyWindowInsetsListener { v, insets ->
+            val bottom = if (Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(WindowInsets.Type.navigationBars()).bottom
             } else {
                 @Suppress("DEPRECATION")
                 insets.systemWindowInsetBottom
             }
-
-            Log.d("ANTARA_KB", "Nav bar height: $navBarHeight")
-
-            v.setPadding(
-                v.paddingLeft,
-                v.paddingTop,
-                v.paddingRight,
-                navBarHeight
-            )
+            v.setPadding(0, 0, 0, bottom)
             insets
         }
 
-        val grid = view.findViewById<GridLayout>(R.id.keyboardGrid)
-
-        fun addLetterButtons() {
-            grid.removeAllViews()
-
-            val letters = ('A'..'Z')
-
-            // Dodaj slova
-            for (letter in letters) {
-                val button = Button(this).apply {
-                    text = if (isShifted) letter.toString() else letter.lowercase()
-                    textSize = 16f
-                    isSingleLine = true
-                    ellipsize = null
-                    isAllCaps = false
-
-                    minWidth = 0
-                    minimumWidth = 0
-                    minHeight = 0
-                    minimumHeight = 0
-
-                    setOnClickListener {
-                        val ic = currentInputConnection
-                        if (ic == null) {
-                            Log.w("ANTARA_KB", "InputConnection je null")
-                            return@setOnClickListener
-                        }
-                        val toCommit = if (isShifted) letter.toString() else letter.lowercase()
-                        Log.d("ANTARA_KB", "Tipka pritisnuta: $toCommit")
-                        ic.commitText(toCommit, 1)
-                    }
-                }
-
-                val params = GridLayout.LayoutParams().apply {
-                    width = 0
-                    height = GridLayout.LayoutParams.WRAP_CONTENT
-                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                    setMargins(3, 3, 3, 3)
-                }
-
-                button.layoutParams = params
-                grid.addView(button)
-            }
-
-            // Shift tipka
-            val shiftButton = Button(this).apply {
-                text = if (isShifted) "⬇\uFE0F" else "⬆\uFE0F  "
-                textSize = 14f
-                isSingleLine = true
-                ellipsize = null
-                isAllCaps = false
-
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = 0
-                minimumHeight = 0
-
-                setOnClickListener {
-                    isShifted = !isShifted
-                    Log.d("ANTARA_KB", "Shift toggled: $isShifted")
-                    addLetterButtons() // osvježi tipke s novim stanjem shift-a
-                }
-            }
-
-            val shiftParams = GridLayout.LayoutParams().apply {
-                width = 0
-                height = GridLayout.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(3, 3, 3, 3)
-            }
-            shiftButton.layoutParams = shiftParams
-            grid.addView(shiftButton)
-
-            // Dvije space tipke iste veličine kao ostali gumbi
-            repeat(2) {
-                val spaceButton = Button(this).apply {
-                    text = " "
-                    textSize = 16f
-                    isSingleLine = true
-                    ellipsize = null
-                    isAllCaps = false
-
-                    minWidth = 0
-                    minimumWidth = 0
-                    minHeight = 0
-                    minimumHeight = 0
-
-                    setOnClickListener {
-                        val ic = currentInputConnection
-                        if (ic == null) {
-                            Log.w("ANTARA_KB", "InputConnection je null (SPACE)")
-                            return@setOnClickListener
-                        }
-                        Log.d("ANTARA_KB", "SPACE pritisnut")
-                        ic.commitText(" ", 1)
-                    }
-                }
-
-                val params = GridLayout.LayoutParams().apply {
-                    width = 0
-                    height = GridLayout.LayoutParams.WRAP_CONTENT
-                    columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                    setMargins(4, 4, 4, 4)
-                }
-
-                spaceButton.layoutParams = params
-                grid.addView(spaceButton)
-            }
-
-            // Backspace
-            val backspaceButton = Button(this).apply {
-                text = "⌫"
-                textSize = 18f
-                isSingleLine = true
-                ellipsize = null
-                isAllCaps = false
-
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = 0
-                minimumHeight = 0
-
-                // Jedan klik briše jedno slovo
-                setOnClickListener {
-                    val ic = currentInputConnection
-                    if (ic == null) {
-                        Log.w("ANTARA_KB", "InputConnection null (BACKSPACE)")
-                        return@setOnClickListener
-                    }
-                    Log.d("ANTARA_KB", "BACKSPACE pritisnut")
-                    ic.deleteSurroundingText(1, 0)
-                }
-
-                // Long click započne brisanje ponavljanjem
-                setOnLongClickListener {
-                    val ic = currentInputConnection ?: return@setOnLongClickListener false
-                    Log.d("ANTARA_KB", "BACKSPACE long pressed - start repeating")
-
-                    backspaceRunnable = object : Runnable {
-                        override fun run() {
-                            ic.deleteSurroundingText(1, 0)
-                            backspaceHandler.postDelayed(this, 50) // briši svakih 50ms dok se drži
-                        }
-                    }
-                    backspaceHandler.post(backspaceRunnable!!)
-                    true
-                }
-
-                // Kad se otpusti pritisak na gumb, zaustavi ponavljanje
-                setOnTouchListener { v, event ->
-                    if (event.action == android.view.MotionEvent.ACTION_UP ||
-                        event.action == android.view.MotionEvent.ACTION_CANCEL) {
-                        Log.d("ANTARA_KB", "BACKSPACE released - stop repeating")
-                        backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
-                        backspaceRunnable = null
-                    }
-                    false
-                }
-            }
-
-            val backspaceParams = GridLayout.LayoutParams().apply {
-                width = 0
-                height = GridLayout.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(4, 4, 4, 4)
-            }
-
-            backspaceButton.layoutParams = backspaceParams
-            grid.addView(backspaceButton)
-
-
-            // Enter
-            val enterButton = Button(this).apply {
-                text = "↵"
-                textSize = 18f
-                isSingleLine = true
-                ellipsize = null
-                isAllCaps = false
-
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = 0
-                minimumHeight = 0
-
-                setOnClickListener {
-                    val ic = currentInputConnection
-                    if (ic == null) {
-                        Log.w("ANTARA_KB", "InputConnection null (ENTER)")
-                        return@setOnClickListener
-                    }
-                    Log.d("ANTARA_KB", "ENTER pritisnut")
-                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-                }
-            }
-
-            val enterParams = GridLayout.LayoutParams().apply {
-                width = 0
-                height = GridLayout.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(4, 4, 4, 4)
-            }
-
-            enterButton.layoutParams = enterParams
-            grid.addView(enterButton)
-        }
-
-        addLetterButtons()
-
-        return view
+        redrawKeyboard()
+        return rootView
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        Log.d("ANTARA_KB", "onStartInputView called, restarting=$restarting")
+        setExtractViewShown(false)
+        Log.d("ANTARA_KB", "Input started")
+    }
+
+    override fun onCreateExtractTextView(): View? = null
+
+    override fun onEvaluateFullscreenMode() = false
+
+    private fun redrawKeyboard() {
+        keyboardContainer.removeAllViews()
+
+        if (isNumericMode) {
+            drawNumericKeyboard()
+        } else {
+            drawAlphabetKeyboard()
+        }
+    }
+
+    private fun drawAlphabetKeyboard() {
+        // Prvi red: W E T Z I O
+        addLetterRow(row1Letters, center = true)
+
+        // Drugi red: Q A R G U L P
+        addLetterRow(row2Letters, center = false)
+
+        // Treći red: shift . space f h ? backspace
+        addSpecialRow()
+
+        // Četvrti red: Y S D N M J K
+        addLetterRow(row4Letters, center = false)
+
+        // Peti red: X C V B tipka za brojeve + enter
+        addBottomRow()
+    }
+
+    private fun drawNumericKeyboard() {
+        // Numerička tipkovnica
+        val numericRows = arrayOf(
+            "123",
+            "456",
+            "789",
+            "0.,"
+        )
+
+        for (row in numericRows) {
+            addNumericRow(row)
+        }
+
+        // Dodaj nazad na alfabet
+        val backToAlphaBtn = createButton("ABC").apply {
+            setOnClickListener {
+                isNumericMode = false
+                redrawKeyboard()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 5, 0, 5)
+                height = 80 // Veća visina
+            }
+        }
+        keyboardContainer.addView(backToAlphaBtn)
+    }
+
+    private fun createButton(text: String): Button {
+        return Button(this).apply {
+            this.text = text
+            isAllCaps = false
+            textSize = 14f // Manji tekst
+            setPadding(0, 0, 0, 0)
+
+            // Postavi background ovisno o modu
+            if (isHexagonMode && text.length == 1 && text[0].isLetter()) {
+                // Za heksagone možemo koristiti custom drawable
+                // Za sada koristimo obični zaobljeni oblik
+                setBackgroundResource(R.drawable.button_background)
+            } else {
+                setBackgroundResource(R.drawable.button_background)
+            }
+        }
+    }
+
+    private fun addLetterRow(letters: String, center: Boolean) {
+        val rowLayout = LinearLayout(this)
+        rowLayout.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        rowLayout.orientation = LinearLayout.HORIZONTAL
+
+        // Ako treba centrirati, dodaj prazni prostor
+        if (center) {
+            val spacer = View(this)
+            spacer.layoutParams = LinearLayout.LayoutParams(
+                0,
+                0,
+                1f
+            )
+            rowLayout.addView(spacer)
+        }
+
+        for (c in letters) {
+            val btn = createButton(if (isShifted) c.toString() else c.lowercase()).apply {
+                setOnClickListener {
+                    currentInputConnection?.commitText(text.toString(), 1)
+                    // Automatski isključi shift nakon tipkanja jednog slova
+                    if (isShifted) {
+                        isShifted = false
+                        redrawKeyboard()
+                    }
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(3, 3, 3, 3)
+                    height = 70 // Veća visina za tipke
+                    minimumHeight = 70
+                }
+            }
+            rowLayout.addView(btn)
+        }
+
+        keyboardContainer.addView(rowLayout)
+    }
+
+    private fun addSpecialRow() {
+        val rowLayout = LinearLayout(this)
+        rowLayout.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        rowLayout.orientation = LinearLayout.HORIZONTAL
+
+        // Shift tipka (1.5x širine)
+        val shiftBtn = createButton("⇧").apply {
+            setOnClickListener {
+                isShifted = !isShifted
+                redrawKeyboard()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1.5f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(shiftBtn)
+
+        // Točka (.)
+        val dotBtn = createButton(".").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText(".", 1)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(dotBtn)
+
+        // Space (2x širine)
+        val spaceBtn = createButton(" ").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText(" ", 1)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                2f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(spaceBtn)
+
+        // F
+        val fBtn = createButton(if (isShifted) "F" else "f").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText(text.toString(), 1)
+                if (isShifted) {
+                    isShifted = false
+                    redrawKeyboard()
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(fBtn)
+
+        // H
+        val hBtn = createButton(if (isShifted) "H" else "h").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText(text.toString(), 1)
+                if (isShifted) {
+                    isShifted = false
+                    redrawKeyboard()
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(hBtn)
+
+        // Space (1x širine)
+        val spaceBtn2 = createButton(" ").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText(" ", 1)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(spaceBtn2)
+
+        // Upitnik (?)
+        val questionBtn = createButton("?").apply {
+            setOnClickListener {
+                currentInputConnection?.commitText("?", 1)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(questionBtn)
+
+        // Backspace
+        val backspaceBtn = createButton("⌫").apply {
+            setOnClickListener {
+                currentInputConnection?.deleteSurroundingText(1, 0)
+            }
+
+            setOnLongClickListener {
+                backspaceRunnable = object : Runnable {
+                    override fun run() {
+                        currentInputConnection?.deleteSurroundingText(1, 0)
+                        backspaceHandler.postDelayed(this, 50)
+                    }
+                }
+                backspaceHandler.post(backspaceRunnable!!)
+                true
+            }
+
+            setOnTouchListener { _, e ->
+                if (e.action == MotionEvent.ACTION_UP || e.action == MotionEvent.ACTION_CANCEL) {
+                    backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
+                    backspaceRunnable = null
+                }
+                false
+            }
+
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(backspaceBtn)
+
+        keyboardContainer.addView(rowLayout)
+    }
+
+    private fun addBottomRow() {
+        val rowLayout = LinearLayout(this)
+        rowLayout.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        rowLayout.orientation = LinearLayout.HORIZONTAL
+
+        // Prazan prostor na početku
+        val spacer = View(this)
+        spacer.layoutParams = LinearLayout.LayoutParams(
+            0,
+            0,
+            0.5f
+        )
+        rowLayout.addView(spacer)
+
+        // X C V B (4 tipke)
+        for (c in row5Letters) {
+            val btn = createButton(if (isShifted) c.toString() else c.lowercase()).apply {
+                setOnClickListener {
+                    currentInputConnection?.commitText(text.toString(), 1)
+                    if (isShifted) {
+                        isShifted = false
+                        redrawKeyboard()
+                    }
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(3, 3, 3, 3)
+                    height = 70
+                    minimumHeight = 70
+                }
+            }
+            rowLayout.addView(btn)
+        }
+
+        // Tipka za brojeve (3.5 širine)
+        val numericBtn = createButton("123").apply {
+            setOnClickListener {
+                isNumericMode = true
+                redrawKeyboard()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                3.5f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(numericBtn)
+
+        // Enter tipka (1.5 širine)
+        val enterBtn = createButton("↵").apply {
+            setOnClickListener {
+                currentInputConnection?.sendKeyEvent(
+                    KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
+                )
+                currentInputConnection?.sendKeyEvent(
+                    KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)
+                )
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1.5f
+            ).apply {
+                setMargins(3, 3, 3, 3)
+                height = 70
+                minimumHeight = 70
+            }
+        }
+        rowLayout.addView(enterBtn)
+
+        // Prazan prostor na kraju
+        val spacerEnd = View(this)
+        spacerEnd.layoutParams = LinearLayout.LayoutParams(
+            0,
+            0,
+            0.5f
+        )
+        rowLayout.addView(spacerEnd)
+
+        keyboardContainer.addView(rowLayout)
+    }
+
+    private fun addNumericRow(numbers: String) {
+        val rowLayout = LinearLayout(this)
+        rowLayout.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        rowLayout.orientation = LinearLayout.HORIZONTAL
+
+        // Dodaj praznine s obje strane za centriranje
+        for (i in 0..2) {
+            val spacer = View(this)
+            spacer.layoutParams = LinearLayout.LayoutParams(
+                0,
+                0,
+                1f
+            )
+            rowLayout.addView(spacer)
+        }
+
+        for (c in numbers) {
+            val btn = createButton(c.toString()).apply {
+                setOnClickListener {
+                    currentInputConnection?.commitText(text.toString(), 1)
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(3, 3, 3, 3)
+                    height = 70
+                    minimumHeight = 70
+                }
+            }
+            rowLayout.addView(btn)
+        }
+
+        keyboardContainer.addView(rowLayout)
     }
 }

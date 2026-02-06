@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">AntaraKeyboard</string>
-    <string name="subtype_label">Hrvatska tipkovnica</string>
+    <string name="subtype_label">AntaraKeyboard</string>
 
 </resources>
