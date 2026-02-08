@@ -6,20 +6,22 @@ object KeyBindingStore {
 
     private const val PREFS = "key_bindings"
 
-    fun bind(context: Context, key: String, char: String) {
+    fun getBindings(context: Context, key: String): List<String> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val set = prefs.getStringSet(key, mutableSetOf())!!.toMutableSet()
+        return prefs.getStringSet(key, emptySet())?.toList() ?: emptyList()
+    }
+
+    fun addBinding(context: Context, key: String, char: String) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val set = prefs.getStringSet(key, mutableSetOf())?.toMutableSet() ?: mutableSetOf()
         set.add(char)
         prefs.edit().putStringSet(key, set).apply()
     }
 
-    fun getBindings(context: Context, key: String): List<String> {
+    fun removeBinding(context: Context, key: String, char: String) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getStringSet(key, emptySet())!!.toList()
-    }
-
-    fun clear(context: Context, key: String) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit().remove(key).apply()
+        val set = prefs.getStringSet(key, mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        set.remove(char)
+        prefs.edit().putStringSet(key, set).apply()
     }
 }

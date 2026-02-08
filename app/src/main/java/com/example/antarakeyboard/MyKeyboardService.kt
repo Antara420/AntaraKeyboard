@@ -1,12 +1,19 @@
 package com.example.antarakeyboard
 
+import android.app.Dialog
+import android.content.Context
 import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
 import android.os.*
 import android.view.*
 import android.view.inputmethod.EditorInfo
 import android.widget.*
-import android.util.Log
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.antarakeyboard.KeyboardConfig
+import com.example.antarakeyboard.myDefaultKeyboardConfig
+import com.example.antarakeyboard.myDefaultNumericConfig
+
 
 class MyKeyboardService : InputMethodService() {
 
@@ -15,7 +22,8 @@ class MyKeyboardService : InputMethodService() {
     private var isShifted = false
     private var isNumericMode = false
     private var isDrawing = false
-    private var bindMode = false
+    private var currentKeyboardConfig: KeyboardConfig = myDefaultKeyboardConfig
+
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -27,6 +35,8 @@ class MyKeyboardService : InputMethodService() {
 
     private var swipeStartX = 0f
     private var swipeStartY = 0f
+
+    private var previewPopup: PopupWindow? = null
 
     private lateinit var rootView: View
     private lateinit var keyboardContainer: LinearLayout
@@ -64,21 +74,44 @@ class MyKeyboardService : InputMethodService() {
     override fun onEvaluateFullscreenMode() = false
     override fun onCreateExtractTextView(): View? = null
 
-    /* ───────── BIND DIALOG ───────── */
+    /* ───────── PREVIEW ───────── */
 
-    private fun openBindDialog(key: String) {
-        SpecialCharsDialog(this) { selected ->
-            KeyBindingStore.bind(this, key, selected)
-        }.show()
+    private fun showKeyPreview(button: Button) {
+        hideKeyPreview()
+
+        val tv = TextView(this).apply {
+            text = button.text
+            textSize = 28f
+            setPadding(24, 16, 24, 16)
+            setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
+        }
+
+        tv.measure(
+            View.MeasureSpec.UNSPECIFIED,
+            View.MeasureSpec.UNSPECIFIED
+        )
+
+        previewPopup = PopupWindow(
+            tv,
+            tv.measuredWidth,
+            tv.measuredHeight,
+            false
+        )
+
+        val loc = IntArray(2)
+        button.getLocationOnScreen(loc)
+
+        previewPopup?.showAtLocation(
+            rootView,
+            Gravity.NO_GRAVITY,
+            loc[0] + button.width / 2 - tv.measuredWidth / 2,
+            loc[1] - tv.measuredHeight - 20
+        )
     }
 
-    private fun showSpecialCharacters(key: String) {
-        val bound = KeyBindingStore.getBindings(this, key)
-        if (bound.isEmpty()) return
-
-        SpecialCharsDialog(this) { char ->
-            currentInputConnection?.commitText(char, 1)
-        }.show()
+    private fun hideKeyPreview() {
+        previewPopup?.dismiss()
+        previewPopup = null
     }
 
     /* ───────── HELPERS ───────── */
@@ -102,10 +135,37 @@ class MyKeyboardService : InputMethodService() {
 
         mainHandler.post {
             keyboardContainer.removeAllViews()
-            if (isNumericMode) drawNumeric() else drawAlphabet()
+
+            // Dodaj lijeve specijalne tipke (fiksirane lijevo)
+            val specialLeftRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            currentKeyboardConfig.specialLeft.forEach { keyConfig ->
+                specialLeftRow.addView(createButton(keyConfig.label),
+                    LinearLayout.LayoutParams(0, keyHeight(), 1f))
+            }
+            keyboardContainer.addView(specialLeftRow)
+
+            // Dodaj redove tipki
+            currentKeyboardConfig.rows.forEach { rowConfig ->
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                rowConfig.keys.forEach { keyConfig ->
+                    row.addView(createButton(keyConfig.label),
+                        LinearLayout.LayoutParams(0, keyHeight(), 1f))
+                }
+                keyboardContainer.addView(row)
+            }
+
+            // Dodaj desne specijalne tipke (fiksirane desno)
+            val specialRightRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            currentKeyboardConfig.specialRight.forEach { keyConfig ->
+                specialRightRow.addView(createButton(keyConfig.label),
+                    LinearLayout.LayoutParams(0, keyHeight(), 1f))
+            }
+            keyboardContainer.addView(specialRightRow)
+
             isDrawing = false
         }
     }
+
 
     /* ───────── DRAW ───────── */
 
@@ -139,14 +199,31 @@ class MyKeyboardService : InputMethodService() {
             setOnTouchListener { v, e -> handleTouch(v as Button, e) }
 
             setOnLongClickListener {
-                if (bindMode) {
-                    openBindDialog(text)
+                val key = text.toString()
+                val bindings = KeyBindingStore.getBindings(context, key)
+
+                if (bindings.isEmpty()) {
+                    // Nema bindinga, otvori bind dijalog za dodavanje
+                    openBindLongPressDialog(key)
                 } else {
-                    showSpecialCharacters(text)
+                    // Ima bindinga, otvori popup s izborom za unošenje
+                    SpecialCharsDialog(context, bindings) { selectedChar ->
+                        currentInputConnection?.commitText(selectedChar, 1)
+                    }.show()
                 }
                 true
             }
         }
+
+    private fun openBindLongPressDialog(key: String) {
+        val dialog = BindLongPressDialog(this, key) { selectedKey, selectedChar ->
+            // Spremi vezu između key i selectedChar u svoj storage
+            Toast.makeText(this, "Bind added: $selectedKey -> $selectedChar", Toast.LENGTH_SHORT).show()
+        }
+        dialog.show()
+    }
+
+
 
     /* ───────── TOUCH ───────── */
 
@@ -155,6 +232,12 @@ class MyKeyboardService : InputMethodService() {
             MotionEvent.ACTION_DOWN -> {
                 swipeStartX = e.x
                 swipeStartY = e.y
+
+                val text = button.text.toString()
+                if (text != "⇧" && text != " " && text != "123" && text != "↵" && text != "⌫" && text != "<") {
+                    showKeyPreview(button)
+                }
+
                 return true
             }
 
@@ -168,6 +251,7 @@ class MyKeyboardService : InputMethodService() {
                     dx > 80 -> restoreText()
                     else -> handleClick(button.text.toString())
                 }
+                hideKeyPreview()
                 stopContinuousDelete()
                 return true
             }
@@ -179,23 +263,31 @@ class MyKeyboardService : InputMethodService() {
 
     private fun handleClick(text: String) {
         when (text) {
-            "⇧" -> { isShifted = !isShifted; redrawKeyboard() }
-            "123" -> { isNumericMode = true; redrawKeyboard() }
-            "ABC" -> { isNumericMode = false; redrawKeyboard() }
-            "⌫","<" -> currentInputConnection?.deleteSurroundingText(1,0)
-            "↵" -> currentInputConnection?.sendKeyEvent(
-                KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-            )
-            " " -> currentInputConnection?.commitText(" ",1)
+            "123" -> {
+                currentKeyboardConfig = myDefaultNumericConfig
+                redrawKeyboard()
+            }
+            "ABC" -> {
+                currentKeyboardConfig = myDefaultKeyboardConfig
+                redrawKeyboard()
+            }
+            // ... ostali slučajevi (Shift, Backspace, slova, space, enter)
+            "⇧" -> {
+                isShifted = !isShifted
+                redrawKeyboard()
+            }
+            "⌫" -> currentInputConnection?.deleteSurroundingText(1, 0)
+            "↵" -> currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            " " -> currentInputConnection?.commitText(" ", 1)
             else -> {
-                val out =
-                    if (text.length == 1 && text[0].isLetter())
-                        if (isShifted) text.uppercase() else text.lowercase()
-                    else text
+                val out = if (text.length == 1 && text[0].isLetter())
+                    if (isShifted) text.uppercase() else text.lowercase()
+                else text
                 currentInputConnection?.commitText(out, 1)
             }
         }
     }
+
 
     /* ───────── DELETE / RESTORE ───────── */
 
@@ -206,7 +298,7 @@ class MyKeyboardService : InputMethodService() {
         continuousDeleteRunnable = object : Runnable {
             override fun run() {
                 if (!isContinuousDelete) return
-                currentInputConnection?.deleteSurroundingText(1,0)
+                currentInputConnection?.deleteSurroundingText(1, 0)
                 mainHandler.postDelayed(this, 40)
             }
         }
@@ -237,56 +329,174 @@ class MyKeyboardService : InputMethodService() {
 
     private fun addLetterRow(letters: String, center: Boolean, h: Int) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        if (center) row.addView(View(this), LinearLayout.LayoutParams(0,0,1f))
+        if (center) row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
         letters.forEach {
             row.addView(createButton(it.toString()),
-                LinearLayout.LayoutParams(0,h,1f))
+                LinearLayout.LayoutParams(0, h, 1f))
         }
         keyboardContainer.addView(row)
     }
 
     private fun addSpecialRow(h: Int) {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("⇧","."," ","f","h"," ","?","⌫").forEach {
+        listOf("⇧", ".", " ", "f", "h", " ", "?", "⌫").forEach {
             row.addView(createButton(it),
-                LinearLayout.LayoutParams(0,h,
-                    if (it=="⇧"||it=="⌫") 0.65f else 1f))
+                LinearLayout.LayoutParams(0, h,
+                    if (it == "⇧" || it == "⌫") 0.65f else 1f))
         }
         keyboardContainer.addView(row)
     }
 
     private fun addBottomRow(h: Int) {
         val row = LinearLayout(this)
-        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
+        row.addView(View(this), LinearLayout.LayoutParams(0, 0, 0.5f))
         row5.forEach {
             row.addView(createButton(it.toString()),
-                LinearLayout.LayoutParams(0,h,1f))
+                LinearLayout.LayoutParams(0, h, 1f))
         }
-        row.addView(createButton("123"), LinearLayout.LayoutParams(0,h,2f))
-        row.addView(createButton("↵"), LinearLayout.LayoutParams(0,h,1f))
-        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
+        row.addView(createButton("123"), LinearLayout.LayoutParams(0, h, 2f))
+        row.addView(createButton("↵"), LinearLayout.LayoutParams(0, h, 1f))
+        row.addView(createButton("Bind LP"), LinearLayout.LayoutParams(0, h, 2f)) // Tipka za bind long press
+        row.addView(View(this), LinearLayout.LayoutParams(0, 0, 0.5f))
         keyboardContainer.addView(row)
     }
 
     private fun addNumericRow(keys: Array<String>, side: Float, h: Int) {
         val row = LinearLayout(this)
-        row.addView(View(this), LinearLayout.LayoutParams(0,0,side))
+        row.addView(View(this), LinearLayout.LayoutParams(0, 0, side))
         keys.forEach {
             row.addView(createButton(it),
-                LinearLayout.LayoutParams(0,h,1f))
+                LinearLayout.LayoutParams(0, h, 1f))
         }
-        row.addView(View(this), LinearLayout.LayoutParams(0,0,side))
+        row.addView(View(this), LinearLayout.LayoutParams(0, 0, side))
         keyboardContainer.addView(row)
     }
 
     private fun addNumericBottomRow(h: Int) {
         val row = LinearLayout(this)
-        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
-        listOf("&","%","@","#").forEach {
+        row.addView(View(this), LinearLayout.LayoutParams(0, 0, 0.5f))
+        listOf("&", "%", "@", "#").forEach {
             row.addView(createButton(it),
-                LinearLayout.LayoutParams(0,h,1f))
+                LinearLayout.LayoutParams(0, h, 1f))
         }
-        row.addView(createButton("ABC"), LinearLayout.LayoutParams(0,h,2f))
+        row.addView(createButton("ABC"), LinearLayout.LayoutParams(0, h, 2f))
         keyboardContainer.addView(row)
+    }
+
+    /* ───────── INNER CLASSES ───────── */
+
+    class BindLongPressDialog(
+        context: Context,
+        private val currentKey: String,
+        private val onBindSelected: (String, String) -> Unit
+    ) : Dialog(context) {
+
+        private lateinit var specialCharRecycler: RecyclerView
+        private lateinit var saveButton: Button
+
+        private val specialChars = SpecialChars.ALL
+        private var selectedSpecialChar: String? = null
+
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            setContentView(R.layout.dialog_bind_long_press)
+
+            saveButton = findViewById(R.id.saveBindButton)
+            saveButton.isEnabled = false
+
+            specialCharRecycler = findViewById(R.id.specialCharRecycler)
+            specialCharRecycler.layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            specialCharRecycler.adapter = CharSelectorAdapter(specialChars) { char ->
+                selectedSpecialChar = char
+                saveButton.isEnabled = true
+            }
+
+            saveButton.setOnClickListener {
+                selectedSpecialChar?.let { char ->
+                    onBindSelected(currentKey, char)
+                    dismiss()
+                }
+            }
+        }
+
+        class CharSelectorAdapter(
+            private val items: List<String>,
+            private val onItemClick: (String) -> Unit
+        ) : RecyclerView.Adapter<CharSelectorAdapter.ViewHolder>() {
+
+            private var selectedPos = RecyclerView.NO_POSITION
+
+            inner class ViewHolder(val button: Button) : RecyclerView.ViewHolder(button) {
+                fun bind(char: String, isSelected: Boolean) {
+                    button.text = char
+                    button.setBackgroundColor(
+                        if (isSelected) 0xFFFFCC80.toInt() else 0x00000000
+                    )
+                    button.setOnClickListener {
+                        val old = selectedPos
+                        selectedPos = adapterPosition
+                        notifyItemChanged(old)
+                        notifyItemChanged(selectedPos)
+                        onItemClick(char)
+                    }
+                }
+            }
+
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+                val btn = Button(parent.context).apply {
+                    isAllCaps = false
+                    textSize = 18f
+                    setPadding(16, 16, 16, 16)
+                }
+                return ViewHolder(btn)
+            }
+
+            override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+                holder.bind(items[position], position == selectedPos)
+            }
+
+            override fun getItemCount() = items.size
+        }
+    }
+
+
+
+    class CharSelectorAdapter(
+        private val items: List<String>,
+        private val onItemClick: (String) -> Unit
+    ) : RecyclerView.Adapter<CharSelectorAdapter.ViewHolder>() {
+
+        private var selectedPos = RecyclerView.NO_POSITION
+
+        inner class ViewHolder(val button: Button) : RecyclerView.ViewHolder(button) {
+            fun bind(char: String, isSelected: Boolean) {
+                button.text = char
+                button.setBackgroundColor(
+                    if (isSelected) 0xFFFFCC80.toInt() else 0x00000000
+                )
+                button.setOnClickListener {
+                    val old = selectedPos
+                    selectedPos = adapterPosition
+                    notifyItemChanged(old)
+                    notifyItemChanged(selectedPos)
+                    onItemClick(char)
+                }
+            }
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val btn = Button(parent.context).apply {
+                isAllCaps = false
+                textSize = 18f
+                setPadding(16, 16, 16, 16)
+            }
+            return ViewHolder(btn)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            holder.bind(items[position], position == selectedPos)
+        }
+
+        override fun getItemCount() = items.size
     }
 }

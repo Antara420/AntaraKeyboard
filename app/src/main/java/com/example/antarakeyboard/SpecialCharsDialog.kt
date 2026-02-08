@@ -6,9 +6,9 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.GridLayout
 
-
 class SpecialCharsDialog(
     context: Context,
+    private val chars: List<String>,
     private val onCharSelected: (String) -> Unit
 ) : Dialog(context) {
 
@@ -18,7 +18,7 @@ class SpecialCharsDialog(
 
         val grid = findViewById<GridLayout>(R.id.specialCharsGrid)
 
-        SpecialChars.ALL.forEach { char ->
+        chars.forEach { char ->
             val btn = Button(context).apply {
                 text = char
                 textSize = 18f
