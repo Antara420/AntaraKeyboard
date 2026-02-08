@@ -1,46 +1,53 @@
 package com.example.antarakeyboard
 
+import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
-import android.os.Build
-import android.os.Handler
-import android.util.Log
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowInsets
+import android.os.*
+import android.view.*
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.LinearLayout
+import android.widget.*
+import android.util.Log
 
 class MyKeyboardService : InputMethodService() {
 
+    /* ───────── STATE ───────── */
+
     private var isShifted = false
     private var isNumericMode = false
-    private var isHexagonMode = false // Opcija za heksagone
+    private var isDrawing = false
+    private var bindMode = false
 
-    private val backspaceHandler = Handler()
-    private var backspaceRunnable: Runnable? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var isContinuousDelete = false
+    private var continuousDeleteRunnable: Runnable? = null
+
+    private var lastDeletedText = ""
+    private var restoreIndex = 0
+
+    private var swipeStartX = 0f
+    private var swipeStartY = 0f
 
     private lateinit var rootView: View
     private lateinit var keyboardContainer: LinearLayout
 
-    // Redovi slova prema tvom zahtjevu
-    private val row1Letters = "WETZIO"
-    private val row2Letters = "QARGULP"
-    private val row4Letters = "YSDNMJK"
-    private val row5Letters = "XCVB"
+    /* ───────── LAYOUT ───────── */
+
+    private val row1 = "WETZIO"
+    private val row2 = "QARGULP"
+    private val row4 = "YSDNMJK"
+    private val row5 = "XCVB"
+
+    /* ───────── LIFECYCLE ───────── */
 
     override fun onCreateInputView(): View {
         rootView = layoutInflater.inflate(R.layout.keyboard_view, null)
         keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
 
         rootView.setOnApplyWindowInsetsListener { v, insets ->
-            val bottom = if (Build.VERSION.SDK_INT >= 30) {
+            val bottom = if (Build.VERSION.SDK_INT >= 30)
                 insets.getInsets(WindowInsets.Type.navigationBars()).bottom
-            } else {
-                @Suppress("DEPRECATION")
-                insets.systemWindowInsetBottom
-            }
+            else insets.systemWindowInsetBottom
             v.setPadding(0, 0, 0, bottom)
             insets
         }
@@ -52,438 +59,234 @@ class MyKeyboardService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         setExtractViewShown(false)
-        Log.d("ANTARA_KB", "Input started")
     }
-
-    override fun onCreateExtractTextView(): View? = null
 
     override fun onEvaluateFullscreenMode() = false
+    override fun onCreateExtractTextView(): View? = null
+
+    /* ───────── BIND DIALOG ───────── */
+
+    private fun openBindDialog(key: String) {
+        SpecialCharsDialog(this) { selected ->
+            KeyBindingStore.bind(this, key, selected)
+        }.show()
+    }
+
+    private fun showSpecialCharacters(key: String) {
+        val bound = KeyBindingStore.getBindings(this, key)
+        if (bound.isEmpty()) return
+
+        SpecialCharsDialog(this) { char ->
+            currentInputConnection?.commitText(char, 1)
+        }.show()
+    }
+
+    /* ───────── HELPERS ───────── */
+
+    private fun isPortrait() =
+        resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
+    private fun keyHeight(): Int =
+        ((resources.displayMetrics.heightPixels *
+                if (isPortrait()) 0.07 else 0.05) * 1.3).toInt()
+
+    private fun numericKeyHeight(): Int =
+        ((resources.displayMetrics.heightPixels *
+                if (isPortrait()) 0.065 else 0.045) * 1.3).toInt()
+
+    /* ───────── REDRAW ───────── */
 
     private fun redrawKeyboard() {
-        keyboardContainer.removeAllViews()
+        if (isDrawing) return
+        isDrawing = true
 
-        if (isNumericMode) {
-            drawNumericKeyboard()
-        } else {
-            drawAlphabetKeyboard()
+        mainHandler.post {
+            keyboardContainer.removeAllViews()
+            if (isNumericMode) drawNumeric() else drawAlphabet()
+            isDrawing = false
         }
     }
 
-    private fun drawAlphabetKeyboard() {
-        // Prvi red: W E T Z I O
-        addLetterRow(row1Letters, center = true)
+    /* ───────── DRAW ───────── */
 
-        // Drugi red: Q A R G U L P
-        addLetterRow(row2Letters, center = false)
-
-        // Treći red: shift . space f h ? backspace
-        addSpecialRow()
-
-        // Četvrti red: Y S D N M J K
-        addLetterRow(row4Letters, center = false)
-
-        // Peti red: X C V B tipka za brojeve + enter
-        addBottomRow()
+    private fun drawAlphabet() {
+        val h = keyHeight()
+        addLetterRow(row1, true, h)
+        addLetterRow(row2, false, h)
+        addSpecialRow(h)
+        addLetterRow(row4, false, h)
+        addBottomRow(h)
     }
 
-    private fun drawNumericKeyboard() {
-        // Numerička tipkovnica
-        val numericRows = arrayOf(
-            "123",
-            "456",
-            "789",
-            "0.,"
-        )
-
-        for (row in numericRows) {
-            addNumericRow(row)
-        }
-
-        // Dodaj nazad na alfabet
-        val backToAlphaBtn = createButton("ABC").apply {
-            setOnClickListener {
-                isNumericMode = false
-                redrawKeyboard()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 5, 0, 5)
-                height = 80 // Veća visina
-            }
-        }
-        keyboardContainer.addView(backToAlphaBtn)
+    private fun drawNumeric() {
+        val h = numericKeyHeight()
+        addNumericRow(arrayOf("^","1","2","3","4","<"), 0.5f, h)
+        addNumericRow(arrayOf("€","+","5","6","7","(",")"), 0.25f, h)
+        addSpecialRow(h)
+        addNumericRow(arrayOf("§","-","_","0","*","/","¿"), 0.25f, h)
+        addNumericBottomRow(h)
     }
 
-    private fun createButton(text: String): Button {
-        return Button(this).apply {
+    /* ───────── BUTTON ───────── */
+
+    private fun createButton(text: String): Button =
+        Button(this).apply {
             this.text = text
             isAllCaps = false
-            textSize = 14f // Manji tekst
-            setPadding(0, 0, 0, 0)
+            textSize = if (isPortrait()) 16f else 14f
+            setPadding(6, 10, 6, 10)
 
-            // Postavi background ovisno o modu
-            if (isHexagonMode && text.length == 1 && text[0].isLetter()) {
-                // Za heksagone možemo koristiti custom drawable
-                // Za sada koristimo obični zaobljeni oblik
-                setBackgroundResource(R.drawable.button_background)
-            } else {
-                setBackgroundResource(R.drawable.button_background)
-            }
-        }
-    }
-
-    private fun addLetterRow(letters: String, center: Boolean) {
-        val rowLayout = LinearLayout(this)
-        rowLayout.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        rowLayout.orientation = LinearLayout.HORIZONTAL
-
-        // Ako treba centrirati, dodaj prazni prostor
-        if (center) {
-            val spacer = View(this)
-            spacer.layoutParams = LinearLayout.LayoutParams(
-                0,
-                0,
-                1f
-            )
-            rowLayout.addView(spacer)
-        }
-
-        for (c in letters) {
-            val btn = createButton(if (isShifted) c.toString() else c.lowercase()).apply {
-                setOnClickListener {
-                    currentInputConnection?.commitText(text.toString(), 1)
-                    // Automatski isključi shift nakon tipkanja jednog slova
-                    if (isShifted) {
-                        isShifted = false
-                        redrawKeyboard()
-                    }
-                }
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
-                    setMargins(3, 3, 3, 3)
-                    height = 70 // Veća visina za tipke
-                    minimumHeight = 70
-                }
-            }
-            rowLayout.addView(btn)
-        }
-
-        keyboardContainer.addView(rowLayout)
-    }
-
-    private fun addSpecialRow() {
-        val rowLayout = LinearLayout(this)
-        rowLayout.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        rowLayout.orientation = LinearLayout.HORIZONTAL
-
-        // Shift tipka (1.5x širine)
-        val shiftBtn = createButton("⇧").apply {
-            setOnClickListener {
-                isShifted = !isShifted
-                redrawKeyboard()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1.5f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(shiftBtn)
-
-        // Točka (.)
-        val dotBtn = createButton(".").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText(".", 1)
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(dotBtn)
-
-        // Space (2x širine)
-        val spaceBtn = createButton(" ").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText(" ", 1)
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                2f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(spaceBtn)
-
-        // F
-        val fBtn = createButton(if (isShifted) "F" else "f").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText(text.toString(), 1)
-                if (isShifted) {
-                    isShifted = false
-                    redrawKeyboard()
-                }
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(fBtn)
-
-        // H
-        val hBtn = createButton(if (isShifted) "H" else "h").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText(text.toString(), 1)
-                if (isShifted) {
-                    isShifted = false
-                    redrawKeyboard()
-                }
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(hBtn)
-
-        // Space (1x širine)
-        val spaceBtn2 = createButton(" ").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText(" ", 1)
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(spaceBtn2)
-
-        // Upitnik (?)
-        val questionBtn = createButton("?").apply {
-            setOnClickListener {
-                currentInputConnection?.commitText("?", 1)
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(questionBtn)
-
-        // Backspace
-        val backspaceBtn = createButton("⌫").apply {
-            setOnClickListener {
-                currentInputConnection?.deleteSurroundingText(1, 0)
-            }
+            setOnTouchListener { v, e -> handleTouch(v as Button, e) }
 
             setOnLongClickListener {
-                backspaceRunnable = object : Runnable {
-                    override fun run() {
-                        currentInputConnection?.deleteSurroundingText(1, 0)
-                        backspaceHandler.postDelayed(this, 50)
-                    }
+                if (bindMode) {
+                    openBindDialog(text)
+                } else {
+                    showSpecialCharacters(text)
                 }
-                backspaceHandler.post(backspaceRunnable!!)
                 true
             }
+        }
 
-            setOnTouchListener { _, e ->
-                if (e.action == MotionEvent.ACTION_UP || e.action == MotionEvent.ACTION_CANCEL) {
-                    backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
-                    backspaceRunnable = null
-                }
-                false
+    /* ───────── TOUCH ───────── */
+
+    private fun handleTouch(button: Button, e: MotionEvent): Boolean {
+        when (e.action) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeStartX = e.x
+                swipeStartY = e.y
+                return true
             }
 
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
+            MotionEvent.ACTION_UP -> {
+                val dx = e.x - swipeStartX
+                val dy = e.y - swipeStartY
+
+                when {
+                    dy < -60 -> currentInputConnection?.commitText(button.text.toString().uppercase(), 1)
+                    dx < -80 -> startContinuousDelete()
+                    dx > 80 -> restoreText()
+                    else -> handleClick(button.text.toString())
+                }
+                stopContinuousDelete()
+                return true
             }
         }
-        rowLayout.addView(backspaceBtn)
-
-        keyboardContainer.addView(rowLayout)
+        return false
     }
 
-    private fun addBottomRow() {
-        val rowLayout = LinearLayout(this)
-        rowLayout.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        rowLayout.orientation = LinearLayout.HORIZONTAL
+    /* ───────── CLICK ───────── */
 
-        // Prazan prostor na početku
-        val spacer = View(this)
-        spacer.layoutParams = LinearLayout.LayoutParams(
-            0,
-            0,
-            0.5f
-        )
-        rowLayout.addView(spacer)
-
-        // X C V B (4 tipke)
-        for (c in row5Letters) {
-            val btn = createButton(if (isShifted) c.toString() else c.lowercase()).apply {
-                setOnClickListener {
-                    currentInputConnection?.commitText(text.toString(), 1)
-                    if (isShifted) {
-                        isShifted = false
-                        redrawKeyboard()
-                    }
-                }
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
-                    setMargins(3, 3, 3, 3)
-                    height = 70
-                    minimumHeight = 70
-                }
-            }
-            rowLayout.addView(btn)
-        }
-
-        // Tipka za brojeve (3.5 širine)
-        val numericBtn = createButton("123").apply {
-            setOnClickListener {
-                isNumericMode = true
-                redrawKeyboard()
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                3.5f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(numericBtn)
-
-        // Enter tipka (1.5 širine)
-        val enterBtn = createButton("↵").apply {
-            setOnClickListener {
-                currentInputConnection?.sendKeyEvent(
-                    KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-                )
-                currentInputConnection?.sendKeyEvent(
-                    KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)
-                )
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1.5f
-            ).apply {
-                setMargins(3, 3, 3, 3)
-                height = 70
-                minimumHeight = 70
-            }
-        }
-        rowLayout.addView(enterBtn)
-
-        // Prazan prostor na kraju
-        val spacerEnd = View(this)
-        spacerEnd.layoutParams = LinearLayout.LayoutParams(
-            0,
-            0,
-            0.5f
-        )
-        rowLayout.addView(spacerEnd)
-
-        keyboardContainer.addView(rowLayout)
-    }
-
-    private fun addNumericRow(numbers: String) {
-        val rowLayout = LinearLayout(this)
-        rowLayout.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        rowLayout.orientation = LinearLayout.HORIZONTAL
-
-        // Dodaj praznine s obje strane za centriranje
-        for (i in 0..2) {
-            val spacer = View(this)
-            spacer.layoutParams = LinearLayout.LayoutParams(
-                0,
-                0,
-                1f
+    private fun handleClick(text: String) {
+        when (text) {
+            "⇧" -> { isShifted = !isShifted; redrawKeyboard() }
+            "123" -> { isNumericMode = true; redrawKeyboard() }
+            "ABC" -> { isNumericMode = false; redrawKeyboard() }
+            "⌫","<" -> currentInputConnection?.deleteSurroundingText(1,0)
+            "↵" -> currentInputConnection?.sendKeyEvent(
+                KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
             )
-            rowLayout.addView(spacer)
-        }
-
-        for (c in numbers) {
-            val btn = createButton(c.toString()).apply {
-                setOnClickListener {
-                    currentInputConnection?.commitText(text.toString(), 1)
-                }
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
-                    setMargins(3, 3, 3, 3)
-                    height = 70
-                    minimumHeight = 70
-                }
+            " " -> currentInputConnection?.commitText(" ",1)
+            else -> {
+                val out =
+                    if (text.length == 1 && text[0].isLetter())
+                        if (isShifted) text.uppercase() else text.lowercase()
+                    else text
+                currentInputConnection?.commitText(out, 1)
             }
-            rowLayout.addView(btn)
         }
+    }
 
-        keyboardContainer.addView(rowLayout)
+    /* ───────── DELETE / RESTORE ───────── */
+
+    private fun startContinuousDelete() {
+        if (isContinuousDelete) return
+        isContinuousDelete = true
+
+        continuousDeleteRunnable = object : Runnable {
+            override fun run() {
+                if (!isContinuousDelete) return
+                currentInputConnection?.deleteSurroundingText(1,0)
+                mainHandler.postDelayed(this, 40)
+            }
+        }
+        mainHandler.post(continuousDeleteRunnable!!)
+    }
+
+    private fun stopContinuousDelete() {
+        isContinuousDelete = false
+        continuousDeleteRunnable?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    private fun restoreText() {
+        if (lastDeletedText.isEmpty()) return
+        restoreIndex = lastDeletedText.length
+
+        mainHandler.post(object : Runnable {
+            override fun run() {
+                if (restoreIndex <= 0) return
+                currentInputConnection?.commitText(
+                    lastDeletedText[--restoreIndex].toString(), 1
+                )
+                mainHandler.postDelayed(this, 50)
+            }
+        })
+    }
+
+    /* ───────── ROWS ───────── */
+
+    private fun addLetterRow(letters: String, center: Boolean, h: Int) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        if (center) row.addView(View(this), LinearLayout.LayoutParams(0,0,1f))
+        letters.forEach {
+            row.addView(createButton(it.toString()),
+                LinearLayout.LayoutParams(0,h,1f))
+        }
+        keyboardContainer.addView(row)
+    }
+
+    private fun addSpecialRow(h: Int) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("⇧","."," ","f","h"," ","?","⌫").forEach {
+            row.addView(createButton(it),
+                LinearLayout.LayoutParams(0,h,
+                    if (it=="⇧"||it=="⌫") 0.65f else 1f))
+        }
+        keyboardContainer.addView(row)
+    }
+
+    private fun addBottomRow(h: Int) {
+        val row = LinearLayout(this)
+        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
+        row5.forEach {
+            row.addView(createButton(it.toString()),
+                LinearLayout.LayoutParams(0,h,1f))
+        }
+        row.addView(createButton("123"), LinearLayout.LayoutParams(0,h,2f))
+        row.addView(createButton("↵"), LinearLayout.LayoutParams(0,h,1f))
+        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
+        keyboardContainer.addView(row)
+    }
+
+    private fun addNumericRow(keys: Array<String>, side: Float, h: Int) {
+        val row = LinearLayout(this)
+        row.addView(View(this), LinearLayout.LayoutParams(0,0,side))
+        keys.forEach {
+            row.addView(createButton(it),
+                LinearLayout.LayoutParams(0,h,1f))
+        }
+        row.addView(View(this), LinearLayout.LayoutParams(0,0,side))
+        keyboardContainer.addView(row)
+    }
+
+    private fun addNumericBottomRow(h: Int) {
+        val row = LinearLayout(this)
+        row.addView(View(this), LinearLayout.LayoutParams(0,0,0.5f))
+        listOf("&","%","@","#").forEach {
+            row.addView(createButton(it),
+                LinearLayout.LayoutParams(0,h,1f))
+        }
+        row.addView(createButton("ABC"), LinearLayout.LayoutParams(0,h,2f))
+        keyboardContainer.addView(row)
     }
 }
