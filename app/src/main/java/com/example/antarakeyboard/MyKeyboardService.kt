@@ -13,6 +13,15 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.antarakeyboard.KeyboardConfig
 import com.example.antarakeyboard.myDefaultKeyboardConfig
 import com.example.antarakeyboard.myDefaultNumericConfig
+import com.example.antarakeyboard.prefs.KeyBindingStore
+import com.example.antarakeyboard.prefs.KeyBinding
+import com.example.antarakeyboard.prefs.KeyboardPrefs
+import com.example.antarakeyboard.myUserKeyboardConfig
+import com.example.antarakeyboard.prefs.KeyShape
+
+
+
+
 
 
 class MyKeyboardService : InputMethodService() {
@@ -54,17 +63,17 @@ class MyKeyboardService : InputMethodService() {
         rootView = layoutInflater.inflate(R.layout.keyboard_view, null)
         keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
 
-        rootView.setOnApplyWindowInsetsListener { v, insets ->
-            val bottom = if (Build.VERSION.SDK_INT >= 30)
-                insets.getInsets(WindowInsets.Type.navigationBars()).bottom
-            else insets.systemWindowInsetBottom
-            v.setPadding(0, 0, 0, bottom)
-            insets
-        }
+        currentKeyboardConfig =
+            if (KeyboardPrefs.hasCustomLayout(this)) {
+                myUserKeyboardConfig
+            } else {
+                myDefaultKeyboardConfig
+            }
 
         redrawKeyboard()
         return rootView
     }
+
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
@@ -199,29 +208,31 @@ class MyKeyboardService : InputMethodService() {
             setOnTouchListener { v, e -> handleTouch(v as Button, e) }
 
             setOnLongClickListener {
-                val key = text.toString()
-                val bindings = KeyBindingStore.getBindings(context, key)
-
-                if (bindings.isEmpty()) {
-                    // Nema bindinga, otvori bind dijalog za dodavanje
-                    openBindLongPressDialog(key)
-                } else {
-                    // Ima bindinga, otvori popup s izborom za unošenje
-                    SpecialCharsDialog(context, bindings) { selectedChar ->
-                        currentInputConnection?.commitText(selectedChar, 1)
-                    }.show()
-                }
+                openBindLongPressDialog()
                 true
             }
+
+
         }
 
-    private fun openBindLongPressDialog(key: String) {
-        val dialog = BindLongPressDialog(this, key) { selectedKey, selectedChar ->
-            // Spremi vezu između key i selectedChar u svoj storage
-            Toast.makeText(this, "Bind added: $selectedKey -> $selectedChar", Toast.LENGTH_SHORT).show()
-        }
-        dialog.show()
+    private fun openBindLongPressDialog() {
+        BindLongPressDialog(
+            this,
+            currentKeyboardConfig
+        ) { selectedKey, selectedChar ->
+
+            KeyBindingStore.addBinding(this, selectedKey, selectedChar)
+
+            Toast.makeText(
+                this,
+                "Bind added: $selectedKey → $selectedChar",
+                Toast.LENGTH_SHORT
+            ).show()
+        }.show()
     }
+
+
+
 
 
 

@@ -1,42 +1,41 @@
 package com.example.antarakeyboard.prefs
 
-
 import android.content.Context
-
+import android.content.SharedPreferences
 
 object KeyboardPrefs {
-    private const val PREF = "antara_keyboard_prefs"
 
-
-    private const val KEY_SCALE = "keyboard_scale"
+    private const val PREFS_NAME = "keyboard_prefs"
+    private const val KEY_SCALE = "key_scale"
     private const val KEY_SHAPE = "key_shape"
+    private const val KEY_CUSTOM_LAYOUT = "custom_layout"  // <-- dodaj ovu konstantu
 
+    private fun prefs(context: Context): SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun setScale(ctx: Context, scale: Float) {
-        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-            .edit().putFloat(KEY_SCALE, scale).apply()
+    fun getScale(context: Context): Float =
+        prefs(context).getFloat(KEY_SCALE, 1.0f)
+
+    fun setScale(context: Context, scale: Float) {
+        prefs(context).edit().putFloat(KEY_SCALE, scale).apply()
     }
 
-
-    fun getScale(ctx: Context): Float =
-        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-            .getFloat(KEY_SCALE, 1.0f)
-
-
-    fun setShape(ctx: Context, shape: KeyShape) {
-        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-            .edit().putString(KEY_SHAPE, shape.name).apply()
+    fun getShape(context: Context): KeyShape {
+        val name = prefs(context).getString(KEY_SHAPE, KeyShape.HEX.name)
+        return KeyShape.valueOf(name!!)
     }
 
+    fun setShape(context: Context, shape: KeyShape) {
+        prefs(context).edit().putString(KEY_SHAPE, shape.name).apply()
+    }
 
-    fun getShape(ctx: Context): KeyShape {
-        val name = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-            .getString(KEY_SHAPE, KeyShape.HEX.name)!!
-        return KeyShape.valueOf(name)
+    // ───── OVDE DODAJ ─────
+
+    fun hasCustomLayout(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CUSTOM_LAYOUT, false)
+
+    fun setCustomLayout(context: Context, value: Boolean = true) {
+        prefs(context).edit().putBoolean(KEY_CUSTOM_LAYOUT, value).apply()
     }
 }
 
-
-enum class KeyShape {
-    HEX, TRIANGLE
-}
