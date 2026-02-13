@@ -59,12 +59,18 @@ class MyKeyboardService : InputMethodService() {
     /* ───────── LIFECYCLE ───────── */
     override fun onCreateInputView(): View {
         rootView = layoutInflater.inflate(R.layout.keyboard_view, null)
-        keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
+
+        val container = rootView.findViewById<LinearLayout?>(R.id.keyboardContainer)
+            ?: throw IllegalStateException("keyboard_view.xml nema LinearLayout s id=keyboardContainer")
+
+        keyboardContainer = container
+
         currentKeyboardConfig = KeyboardPrefs.loadLayout(this)
         alphabetLayout = currentKeyboardConfig
         redrawKeyboard()
         return rootView
     }
+
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
@@ -142,11 +148,17 @@ class MyKeyboardService : InputMethodService() {
         setOnTouchListener { v, e -> handleTouch(v as Button, e) }
         setOnLongClickListener {
             val keyConfig = currentKeyboardConfig.findKey(text)
-            val binds = keyConfig?.longPressBindings ?: emptyList()
-            if (binds.isEmpty()) openBindLongPressDialog()
-            else SpecialCharsDialog(context, binds) { currentInputConnection?.commitText(it,1) }.show()
+                ?: return@setOnLongClickListener false   // nema bindanja za special tipke
+
+            val binds = keyConfig.longPressBindings
+            if (binds.isEmpty()) {
+                openBindLongPressDialog()
+            } else {
+                SpecialCharsDialog(context, binds) { currentInputConnection?.commitText(it, 1) }.show()
+            }
             true
         }
+
 
     }
 

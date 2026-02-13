@@ -15,7 +15,7 @@
 
     <SeekBar
         android:id="@+id/sizeSeek"
-        android:max="60"
+        android:max="100"
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
@@ -47,10 +47,24 @@
             android:text="Triangle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"/>
+
+
+        <RadioButton
+            android:id="@+id/circleBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Circle" />
+
+        <RadioButton
+            android:id="@+id/cubeBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Cube" />
+
     </RadioGroup>
 
 
-    <com.example.antarakeyboard.ShapePreviewView
+    <com.example.antarakeyboard.ui.ShapePreviewView
         android:id="@+id/preview"
         android:layout_width="120dp"
         android:layout_height="120dp"

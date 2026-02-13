@@ -32,7 +32,11 @@ class ShapePreviewView @JvmOverloads constructor(
         when (shape) {
             KeyShape.HEX -> drawHex(canvas)
             KeyShape.TRIANGLE -> drawTriangle(canvas)
+            KeyShape.CIRCLE -> drawCircle(canvas)
+            KeyShape.CUBE -> drawCube(canvas)
         }
+
+
     }
 
 
@@ -64,4 +68,49 @@ class ShapePreviewView @JvmOverloads constructor(
         p.close()
         c.drawPath(p, paint)
     }
+
+    private fun drawCircle(c: Canvas) {
+        val r = (minOf(width, height) * 0.45f)
+        c.drawCircle(width / 2f, height / 2f, r, paint)
+    }
+
+    private fun drawCube(c: Canvas) {
+        // "kocka" kao 3D cube (dvije plohe + spojnice)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val pad = minOf(w, h) * 0.15f
+        val dx = pad * 0.6f
+        val dy = pad * 0.6f
+
+        val front = Path().apply {
+            moveTo(pad, pad + dy)
+            lineTo(w - pad - dx, pad + dy)
+            lineTo(w - pad - dx, h - pad)
+            lineTo(pad, h - pad)
+            close()
+        }
+
+        val top = Path().apply {
+            moveTo(pad, pad + dy)
+            lineTo(pad + dx, pad)
+            lineTo(w - pad, pad)
+            lineTo(w - pad - dx, pad + dy)
+            close()
+        }
+
+        val side = Path().apply {
+            moveTo(w - pad - dx, pad + dy)
+            lineTo(w - pad, pad)
+            lineTo(w - pad, h - pad - dy)
+            lineTo(w - pad - dx, h - pad)
+            close()
+        }
+
+        c.drawPath(front, paint)
+        c.drawPath(top, paint)
+        c.drawPath(side, paint)
+    }
+
 }
+
+
