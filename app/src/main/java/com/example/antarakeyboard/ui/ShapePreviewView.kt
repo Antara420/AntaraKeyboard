@@ -1,5 +1,4 @@
-package com.example.antarakeyboard
-
+package com.example.antarakeyboard.ui
 
 import android.content.Context
 import android.graphics.Canvas
@@ -7,8 +6,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
 import android.view.View
-import com.example.antarakeyboard.prefs.KeyShape
-
+import com.example.antarakeyboard.model.KeyShape
 
 class ShapePreviewView @JvmOverloads constructor(
     ctx: Context,

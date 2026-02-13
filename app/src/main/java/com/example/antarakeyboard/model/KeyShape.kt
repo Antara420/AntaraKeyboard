@@ -1,4 +1,4 @@
-package com.example.antarakeyboard.prefs
+package com.example.antarakeyboard.model
 
 enum class KeyShape {
     HEX,

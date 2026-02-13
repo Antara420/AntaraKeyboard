@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     implementation("androidx.gridlayout:gridlayout:1.0.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 
     implementation("androidx.recyclerview:recyclerview:1.3.0")  // dodano
 

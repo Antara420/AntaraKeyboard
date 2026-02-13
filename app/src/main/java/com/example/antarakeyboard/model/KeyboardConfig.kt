@@ -1,4 +1,4 @@
-package com.example.antarakeyboard
+package com.example.antarakeyboard.model
 
 /* =========================
    DATA MODELS

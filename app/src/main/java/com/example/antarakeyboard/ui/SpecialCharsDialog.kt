@@ -1,10 +1,11 @@
-package com.example.antarakeyboard
+package com.example.antarakeyboard.ui
 
 import android.app.Dialog
 import android.content.Context
 import android.os.Bundle
 import android.widget.Button
 import android.widget.GridLayout
+import com.example.antarakeyboard.R
 
 class SpecialCharsDialog(
     context: Context,

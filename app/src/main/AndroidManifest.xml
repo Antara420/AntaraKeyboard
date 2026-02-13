@@ -13,13 +13,13 @@
         android:theme="@style/Theme.AntaraKeyboard"
         tools:targetApi="31">
 
-        <!-- ISPRAVLJENI SERVICE ELEMENT -->
+        <!-- TIPKOVNICA SERVICE -->
         <service
-            android:name=".MyKeyboardService"
+            android:name=".service.MyKeyboardService"
             android:permission="android.permission.BIND_INPUT_METHOD"
             android:exported="true"
             android:icon="@android:drawable/ic_menu_edit"
-            android:label="Antara Keyboard">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
             </intent-filter>
@@ -28,6 +28,7 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- LAUNCHER ACTIVITY -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -36,6 +37,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
 
 </manifest>
