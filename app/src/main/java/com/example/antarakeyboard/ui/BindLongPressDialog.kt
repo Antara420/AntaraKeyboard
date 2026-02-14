@@ -5,27 +5,33 @@ import android.content.Context
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.antarakeyboard.R
 import com.example.antarakeyboard.model.KeyboardConfig
 
+data class LongPressBind(val keyLabel: String, val charValue: String)
+
 class BindLongPressDialog(
     context: Context,
     private val keyboardConfig: KeyboardConfig,
-    private val onBindSelected: (String, String) -> Unit
+    private val onBindSelected: (LongPressBind) -> Unit
 ) : Dialog(context) {
 
     private lateinit var keyRecycler: RecyclerView
     private lateinit var charRecycler: RecyclerView
     private lateinit var saveButton: Button
 
-    private var selectedKey: String? = null
-    private var selectedChar: String? = null
+    private var selectedKeyLabel: String? = null
+    private var selectedCharValue: String? = null
 
-    private val allKeys = keyboardConfig.rows.flatMap { row ->
-        row.keys.map { it.label }
-    }
+    // ✅ samo "normalne" tipke kao key (bez specijalnih i bez razmaka)
+    private val nonBindableKeys = setOf("⇧", "⌫", "↵", "123", "ABC", " ")
+    private val allKeyLabels: List<String> = keyboardConfig.rows
+        .flatMap { row -> row.keys.map { it.label } }
+        .filter { it !in nonBindableKeys }
+        .distinct()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,29 +44,30 @@ class BindLongPressDialog(
         saveButton.isEnabled = false
 
         keyRecycler.layoutManager = LinearLayoutManager(context)
-        keyRecycler.adapter = SelectorAdapter(allKeys) {
-            selectedKey = it
+        keyRecycler.adapter = SelectorAdapter(allKeyLabels) { pickedKey ->
+            selectedKeyLabel = pickedKey
             updateSaveState()
         }
 
         charRecycler.layoutManager = LinearLayoutManager(context)
-        charRecycler.adapter = SelectorAdapter(SpecialChars.ALL) {
-            selectedChar = it
+        charRecycler.adapter = SelectorAdapter(SpecialChars.ALL) { pickedChar ->
+            selectedCharValue = pickedChar
             updateSaveState()
         }
 
         saveButton.setOnClickListener {
-            val k = selectedKey
-            val c = selectedChar
-            if (k != null && c != null) {
-                onBindSelected(k, c)
+            val key = selectedKeyLabel
+            val ch = selectedCharValue
+            if (key != null && ch != null) {
+                // ✅ ne može se zamijeniti redoslijed
+                onBindSelected(LongPressBind(keyLabel = key, charValue = ch))
                 dismiss()
             }
         }
     }
 
     private fun updateSaveState() {
-        saveButton.isEnabled = selectedKey != null && selectedChar != null
+        saveButton.isEnabled = selectedKeyLabel != null && selectedCharValue != null
     }
 
     /* ───────── ADAPTER ───────── */
@@ -90,7 +97,7 @@ class BindLongPressDialog(
             holder.btn.setOnClickListener {
                 val old = selected
                 selected = pos
-                notifyItemChanged(old)
+                if (old != RecyclerView.NO_POSITION) notifyItemChanged(old)
                 notifyItemChanged(selected)
                 onSelect(items[pos])
             }

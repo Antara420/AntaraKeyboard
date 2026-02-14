@@ -3,21 +3,21 @@ package com.example.antarakeyboard
 import android.app.Dialog
 import android.os.Bundle
 import android.util.TypedValue
-import android.view.View
+import android.view.Gravity
 import android.view.ViewGroup
 import android.view.Window
 import android.view.ViewTreeObserver
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.SeekBar
-import android.widget.Toast
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.example.antarakeyboard.data.EdgeKeyPrefs
+import com.example.antarakeyboard.data.EdgePos
 import com.example.antarakeyboard.data.KeyboardPrefs
 import com.example.antarakeyboard.model.KeyShape
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.ShapePreviewView
+import com.example.antarakeyboard.model.addLongPress
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
@@ -31,6 +31,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var seek: SeekBar
     private lateinit var bindLPButton: Button
+    private lateinit var resetLayoutButton: Button
+
+    // --- Edge key UI ---
+    private lateinit var setShiftPosButton: Button
+    private lateinit var setBkspPosButton: Button
+    private lateinit var shiftPosLabel: TextView
+    private lateinit var bkspPosLabel: TextView
 
     // --- size preview dialog state ---
     private var sizePreviewDialog: Dialog? = null
@@ -63,18 +70,32 @@ class MainActivity : AppCompatActivity() {
         cube = findViewById(R.id.cubeBtn)
 
         bindLPButton = findViewById(R.id.bindLPButton)
+        resetLayoutButton = findViewById(R.id.resetLayoutButton)
+
+        // ✅ dodaj Edge key controls na dno ekrana
+        addEdgeKeyControls()
+
+        // reset logika
+        resetLayoutButton.setOnClickListener {
+            KeyboardPrefs.clearLayout(this)
+            KeyboardPrefs.setScale(this, 1.0f)
+            KeyboardPrefs.setShape(this, KeyShape.HEX)
+
+            // resetiraj i edge key pozicije na default
+            EdgeKeyPrefs.setShift(this, EdgePos(3, EdgePos.Side.LEFT))
+            EdgeKeyPrefs.setBackspace(this, EdgePos(3, EdgePos.Side.RIGHT))
+            updateEdgeLabels()
+
+            Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
+        }
 
         // --- Load saved scale & shape ---
         savedScale = KeyboardPrefs.getScale(this)
         pendingScale = savedScale
 
-        // SeekBar: map scale -> px slider (we'll map via height directly)
         // slider progress 0..300 => 250..550px
-        // start from middle based on savedScale by approximating: assume 400px base -> convert
-        // real mapping will happen when dialog measures; for now put something sensible:
         seek.max = 300
-        seek.progress = 150 // sredina (400px)
-        // (kad otvoriš preview, on će točno prikazat; kasnije možemo spremit i "zadnju px vrijednost")
+        seek.progress = 150
 
         val savedShape = KeyboardPrefs.getShape(this)
         preview.shape = savedShape
@@ -84,7 +105,6 @@ class MainActivity : AppCompatActivity() {
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(sb: SeekBar?) {
                 showKeyboardSizePreview()
-                // čim se otvori, odmah primijeni trenutni slider
                 val targetH = minKeyboardHeightPx + (seek.progress.coerceIn(0, 300))
                 updateKeyboardSizePreviewByHeight(targetH)
             }
@@ -96,7 +116,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
-                // ništa ne spremamo ovdje — čeka se OK
+                // ne spremamo ništa dok se ne klikne OK
             }
         })
 
@@ -108,11 +128,155 @@ class MainActivity : AppCompatActivity() {
 
         // --- Bind Long Press Button ---
         bindLPButton.setOnClickListener {
-            BindLongPressDialog(this, KeyboardPrefs.loadLayout(this)) { key, selectedChar ->
-                Toast.makeText(this, "Bind added: $key → $selectedChar", Toast.LENGTH_SHORT).show()
+            val cfg = KeyboardPrefs.loadLayout(this)
+
+            BindLongPressDialog(this, cfg) { bind ->
+                cfg.addLongPress(bind.keyLabel, bind.charValue)
+                KeyboardPrefs.saveLayout(this, cfg)
+
+                Toast.makeText(
+                    this,
+                    "Bind saved: ${bind.keyLabel} → ${bind.charValue}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }.show()
         }
     }
+
+    /* =========================
+       EDGE KEYS UI (SHIFT / BKSP)
+       ========================= */
+
+    private fun addEdgeKeyControls() {
+        val root = findViewById<ViewGroup>(android.R.id.content)
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(14))
+            // malo razdvoji od ostatka
+            val lp = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
+            layoutParams = lp
+        }
+
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        setShiftPosButton = Button(this).apply {
+            text = "Set SHIFT position"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+            setOnClickListener { showEdgeKeyDialog(isShift = true) }
+        }
+
+        setBkspPosButton = Button(this).apply {
+            text = "Set BACKSPACE position"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(6)
+            }
+            setOnClickListener { showEdgeKeyDialog(isShift = false) }
+        }
+
+        row1.addView(setShiftPosButton)
+        row1.addView(setBkspPosButton)
+
+        shiftPosLabel = TextView(this).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(0, dp(6), 0, 0)
+        }
+
+        bkspPosLabel = TextView(this).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(0, dp(2), 0, 0)
+        }
+
+        panel.addView(row1)
+        panel.addView(shiftPosLabel)
+        panel.addView(bkspPosLabel)
+
+        root.addView(panel)
+        updateEdgeLabels()
+    }
+
+    private fun updateEdgeLabels() {
+        val s = EdgeKeyPrefs.getShift(this)
+        val b = EdgeKeyPrefs.getBackspace(this)
+        shiftPosLabel.text = "SHIFT: Row ${s.row} ${s.side.name}"
+        bkspPosLabel.text = "BKSP:  Row ${b.row} ${b.side.name}"
+    }
+
+    private fun showEdgeKeyDialog(isShift: Boolean) {
+        val rows = listOf(1, 3, 5)
+        val sides = listOf("LEFT", "RIGHT")
+
+        val currentShift = EdgeKeyPrefs.getShift(this)
+        val currentBksp = EdgeKeyPrefs.getBackspace(this)
+        val current = if (isShift) currentShift else currentBksp
+        val other = if (isShift) currentBksp else currentShift
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+
+        val rowSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                rows
+            )
+            setSelection(rows.indexOf(current.row).coerceAtLeast(0))
+        }
+
+        val sideSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                sides
+            )
+            setSelection(sides.indexOf(current.side.name).coerceAtLeast(0))
+        }
+
+        container.addView(TextView(this).apply { text = "Row (1, 3, 5)" })
+        container.addView(rowSpinner)
+        container.addView(TextView(this).apply { text = "Side (LEFT / RIGHT)" })
+        container.addView(sideSpinner)
+
+        AlertDialog.Builder(this)
+            .setTitle(if (isShift) "Set SHIFT position" else "Set BACKSPACE position")
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val row = rows[rowSpinner.selectedItemPosition]
+                val side = EdgePos.Side.valueOf(sides[sideSpinner.selectedItemPosition])
+                val newPos = EdgePos(row, side)
+
+                // 1) ne smiju biti na istom mjestu
+                if (newPos.row == other.row && newPos.side == other.side) {
+                    Toast.makeText(this, "SHIFT i BACKSPACE ne mogu biti na istom mjestu.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+
+
+                if (isShift) EdgeKeyPrefs.setShift(this, newPos) else EdgeKeyPrefs.setBackspace(this, newPos)
+                updateEdgeLabels()
+                Toast.makeText(this, "Saved.", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    /* =========================
+       SHAPE
+       ========================= */
 
     private fun applyShape(shape: KeyShape) {
         preview.shape = shape
@@ -136,7 +300,6 @@ class MainActivity : AppCompatActivity() {
     private fun showKeyboardSizePreview() {
         if (sizePreviewDialog?.isShowing == true) return
 
-        // zapamti trenutno spremljeno (za Cancel)
         savedScale = KeyboardPrefs.getScale(this)
         pendingScale = savedScale
 
@@ -154,11 +317,9 @@ class MainActivity : AppCompatActivity() {
         previewBuilt = false
         basePreviewHeightPx = 0
 
-        // napravi "pravu tipkovnicu" iz configa (isti raspored kao IME)
         val cfg = KeyboardPrefs.loadLayout(this)
         buildKeyboardPreview(cfg)
 
-        // kad se izmjeri visina, postavi base i primijeni trenutni slider
         previewKeyboardContainer?.viewTreeObserver?.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 val container = previewKeyboardContainer ?: return
@@ -172,7 +333,6 @@ class MainActivity : AppCompatActivity() {
         })
 
         cancelBtn?.setOnClickListener {
-            // vrati spremljeno (na tipkovnici to znači scale nazad) i zatvori
             pendingScale = savedScale
             KeyboardPrefs.setScale(this, savedScale)
             d.dismiss()
@@ -180,7 +340,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         okBtn?.setOnClickListener {
-            // spremi pendingScale i zatvori
             KeyboardPrefs.setScale(this, pendingScale)
             d.dismiss()
             clearPreviewDialogRefs()
@@ -205,12 +364,14 @@ class MainActivity : AppCompatActivity() {
 
         container.removeAllViews()
 
-        // LEFT special row
-        val left = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        config.specialLeft.forEach { key ->
-            left.addView(createPreviewKey(key.label), LinearLayout.LayoutParams(0, dp(44), 1f))
+        // LEFT special row samo ako postoji
+        if (config.specialLeft.isNotEmpty()) {
+            val left = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            config.specialLeft.forEach { key ->
+                left.addView(createPreviewKey(key.label), LinearLayout.LayoutParams(0, dp(44), 1f))
+            }
+            container.addView(left)
         }
-        container.addView(left)
 
         // rows
         config.rows.forEach { rowCfg ->
@@ -221,12 +382,14 @@ class MainActivity : AppCompatActivity() {
             container.addView(row)
         }
 
-        // RIGHT special row
-        val right = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        config.specialRight.forEach { key ->
-            right.addView(createPreviewKey(key.label), LinearLayout.LayoutParams(0, dp(44), 1f))
+        // RIGHT special row samo ako postoji
+        if (config.specialRight.isNotEmpty()) {
+            val right = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            config.specialRight.forEach { key ->
+                right.addView(createPreviewKey(key.label), LinearLayout.LayoutParams(0, dp(44), 1f))
+            }
+            container.addView(right)
         }
-        container.addView(right)
 
         previewBuilt = true
     }
@@ -234,21 +397,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateKeyboardSizePreviewByHeight(targetHeightPx: Int) {
         val container = previewKeyboardContainer ?: return
         if (!previewBuilt) return
-
-        // ako još nemamo izmjerenu base visinu, probaj kasnije
         if (basePreviewHeightPx <= 0) return
 
         val target = targetHeightPx.coerceIn(minKeyboardHeightPx, maxKeyboardHeightPx)
-
-        // skala koja daje približno target px visinu
         val scale = target.toFloat() / basePreviewHeightPx.toFloat()
 
-        // izbjegni trzanje
         if (abs(scale - pendingScale) < 0.005f) return
-
         pendingScale = scale
 
-        // skaliraj preview (real-time)
         container.pivotX = container.width / 2f
         container.pivotY = 0f
         container.scaleX = scale
@@ -266,6 +422,5 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun dp(v: Int): Int =
-        (v * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }

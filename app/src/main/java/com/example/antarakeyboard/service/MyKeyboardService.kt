@@ -14,18 +14,22 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.example.antarakeyboard.R
+import com.example.antarakeyboard.data.EdgeKeyPrefs
+import com.example.antarakeyboard.data.EdgePos
 import com.example.antarakeyboard.data.KeyboardPrefs
+import com.example.antarakeyboard.model.KeyConfig
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
-import com.example.antarakeyboard.model.addLongPress
-import com.example.antarakeyboard.model.findKey
-import com.example.antarakeyboard.model.myDefaultKeyboardConfig
 import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.KeyView
 import com.example.antarakeyboard.ui.SpecialCharsDialog
-import kotlin.math.abs
+import com.example.antarakeyboard.ui.defaultKeyboardLayout
+import com.example.antarakeyboard.ui.defaultNumericLayout
+import kotlin.math.max
 
 class MyKeyboardService : InputMethodService() {
 
@@ -33,7 +37,7 @@ class MyKeyboardService : InputMethodService() {
     private var isShifted = false
     private var isDrawing = false
 
-    private var currentKeyboardConfig: KeyboardConfig = myDefaultKeyboardConfig
+    private var currentKeyboardConfig: KeyboardConfig = defaultKeyboardLayout
     private var alphabetLayout: KeyboardConfig? = null
 
     private var currentShape: KeyShape = KeyShape.HEX
@@ -50,22 +54,40 @@ class MyKeyboardService : InputMethodService() {
     private lateinit var rootView: View
     private lateinit var keyboardContainer: LinearLayout
 
-    /* ───────── PLACEHOLDER FOR NUMERIC CONFIG ───────── */
+    // numeric config
     private val myDefaultNumericConfig: KeyboardConfig
-        get() = myDefaultKeyboardConfig // TODO: zamijeni stvarnim numeric layoutom
+        get() = defaultNumericLayout
+
+    // layout tuning
+    private val KEY_GAP_DP = 1        // minimalan razmak
+    private val ROW_PAD_V_DP = 2      // mali vert padding reda
+    private val OVERLAP_RATIO = 0.25f // hex overlap kao dio veličine tipke
 
     /* ───────── LIFECYCLE ───────── */
     override fun onCreateInputView(): View {
         rootView = layoutInflater.inflate(R.layout.keyboard_view, null)
 
-        val container = rootView.findViewById<LinearLayout?>(R.id.keyboardContainer)
+        // ✅ Insets: base + inset (ne zbrajati!)
+        val basePadL = rootView.paddingLeft
+        val basePadT = rootView.paddingTop
+        val basePadR = rootView.paddingRight
+        val basePadB = rootView.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
+            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
+            insets
+        }
+
+        keyboardContainer = rootView.findViewById<LinearLayout?>(R.id.keyboardContainer)
             ?: throw IllegalStateException("keyboard_view.xml nema LinearLayout s id=keyboardContainer")
-        keyboardContainer = container
 
         // load prefs
-        currentKeyboardConfig = KeyboardPrefs.loadLayout(this)
-        alphabetLayout = currentKeyboardConfig
         currentShape = KeyboardPrefs.getShape(this)
+        currentKeyboardConfig = KeyboardPrefs.loadLayout(this)
+        currentKeyboardConfig = applyEdgeKeys(currentKeyboardConfig)
+
+        alphabetLayout = currentKeyboardConfig
 
         redrawKeyboard()
         return rootView
@@ -74,15 +96,69 @@ class MyKeyboardService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         setExtractViewShown(false)
+
+        currentShape = KeyboardPrefs.getShape(this)
+        currentKeyboardConfig = KeyboardPrefs.loadLayout(this)
+        currentKeyboardConfig = applyEdgeKeys(currentKeyboardConfig)
+
+        // ako smo u numeric modu, ne želimo overwrite-at alphabetLayout
+        val hasLetters = currentKeyboardConfig.rows.any { row ->
+            row.keys.any { k -> k.label.length == 1 && k.label[0].isLetter() }
+        }
+        if (hasLetters) alphabetLayout = currentKeyboardConfig
+
+        redrawKeyboard()
     }
 
     override fun onEvaluateFullscreenMode() = false
     override fun onCreateExtractTextView(): View? = null
 
+    /* ───────── EDGE KEY APPLY (SHIFT/BKSP) ───────── */
+    private fun applyEdgeKeys(cfg: KeyboardConfig): KeyboardConfig {
+        var shiftPos = EdgeKeyPrefs.getShift(this)
+        var bkspPos = EdgeKeyPrefs.getBackspace(this)
+
+        // safety: ne smiju biti na istom mjestu
+        if (shiftPos.row == bkspPos.row && shiftPos.side == bkspPos.side) {
+            shiftPos = EdgePos(3, EdgePos.Side.LEFT)
+            bkspPos = EdgePos(3, EdgePos.Side.RIGHT)
+            EdgeKeyPrefs.setShift(this, shiftPos)
+            EdgeKeyPrefs.setBackspace(this, bkspPos)
+        }
+
+        // 1) makni sve kopije ⇧ i ⌫ iz svih redova
+        cfg.rows.forEach { row ->
+            row.keys.removeAll { it.label == "⇧" || it.label == "⌫" }
+        }
+
+        // mapiranje: row 1/3/5 -> index 0/2/4
+        fun idxFromOddRow(n: Int): Int = when (n) {
+            1 -> 0
+            3 -> 2
+            5 -> 4
+            else -> 2
+        }
+
+        fun insert(label: String, pos: EdgePos) {
+            val idx = idxFromOddRow(pos.row)
+            if (idx !in cfg.rows.indices) return
+            val row = cfg.rows[idx]
+
+            val k = KeyConfig(label = label)
+
+            if (pos.side == EdgePos.Side.LEFT) row.keys.add(0, k) else row.keys.add(k)
+        }
+
+        // 2) ubaci na ciljano mjesto
+        insert("⇧", shiftPos)
+        insert("⌫", bkspPos)
+
+        return cfg
+    }
+
     /* ───────── HELPERS ───────── */
     private fun isPortrait() = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-    // visina tipke = baza * user scale
     private fun keyHeight(): Int {
         val base = (resources.displayMetrics.heightPixels * if (isPortrait()) 0.07 else 0.05).toInt()
         val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f)
@@ -90,6 +166,12 @@ class MyKeyboardService : InputMethodService() {
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun availableKeyboardWidthPx(): Int {
+        val w = rootView.width
+        val base = if (w > 0) w else resources.displayMetrics.widthPixels
+        return (base - rootView.paddingLeft - rootView.paddingRight).coerceAtLeast(dp(200))
+    }
 
     /* ───────── PREVIEW (popup slovo) ───────── */
     private fun showKeyPreview(view: TextView) {
@@ -120,6 +202,44 @@ class MyKeyboardService : InputMethodService() {
         previewPopup = null
     }
 
+    /* ───────── LAYOUT MATH (6 vs 7) ───────── */
+    private data class RowSizing(
+        val keySizePx: Int,
+        val gapPx: Int,
+        val outerPadPx: Int,
+        val overlapPx: Int
+    )
+
+    private fun computeRowSizing(count: Int, availW: Int): RowSizing {
+        val gap = dp(KEY_GAP_DP)
+        val stdKey = ((availW - (7 - 1) * gap) / 7f).toInt().coerceAtLeast(dp(36))
+
+        val keySize: Int
+        val outer: Int
+
+        if (count == 7) {
+            keySize = ((availW - (count - 1) * gap) / count.toFloat()).toInt().coerceAtLeast(dp(36))
+            outer = 0
+        } else if (count == 6) {
+            keySize = stdKey
+            val used = count * keySize + (count - 1) * gap
+            outer = ((availW - used) / 2).coerceAtLeast(0)
+        } else {
+            keySize = ((availW - (count - 1) * gap) / max(1, count).toFloat()).toInt().coerceAtLeast(dp(36))
+            outer = 0
+        }
+
+        val limitedKey = minOf(keySize, keyHeight())
+        val overlap = if (currentShape == KeyShape.HEX) (limitedKey * OVERLAP_RATIO).toInt() else 0
+
+        return RowSizing(
+            keySizePx = limitedKey,
+            gapPx = gap,
+            outerPadPx = outer,
+            overlapPx = overlap
+        )
+    }
+
     /* ───────── REDRAW ───────── */
     private fun redrawKeyboard() {
         if (isDrawing) return
@@ -128,96 +248,97 @@ class MyKeyboardService : InputMethodService() {
         mainHandler.post {
             keyboardContainer.removeAllViews()
 
-            // HEX honeycomb: overlap + stagger
-            val overlap = if (currentShape == KeyShape.HEX) dp(12) else 0
+            val availW = availableKeyboardWidthPx()
 
-            // Left special row (bez staggera)
-            val specialLeftRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            currentKeyboardConfig.specialLeft.forEach { key ->
-                specialLeftRow.addView(
-                    createKey(key.label),
-                    LinearLayout.LayoutParams(0, keyHeight(), 1f)
-                )
-            }
-            keyboardContainer.addView(specialLeftRow)
-
-            // Rows
-            currentKeyboardConfig.rows.forEachIndexed { idx, rowConfig ->
+            fun buildRow(keys: List<KeyConfig>, rowIndex: Int) {
                 val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
-                // HEX: svaki drugi red offset “pola tipke”
-                val stagger = (currentShape == KeyShape.HEX && idx % 2 == 1)
-                if (stagger) {
-                    row.addView(View(this), LinearLayout.LayoutParams(0, 0, 0.5f))
+                val sizing = computeRowSizing(keys.size, availW)
+
+                row.setPadding(sizing.outerPadPx, dp(ROW_PAD_V_DP), sizing.outerPadPx, dp(ROW_PAD_V_DP))
+                row.clipToPadding = false
+
+                keys.forEachIndexed { i, key ->
+                    val kv = createKey(key)
+
+                    if (currentShape == KeyShape.TRIANGLE) {
+                        kv.triangleFlipped = (i % 2 == 1)
+                    }
+
+                    val lp = LinearLayout.LayoutParams(sizing.keySizePx, sizing.keySizePx)
+                    if (i > 0) lp.leftMargin = sizing.gapPx
+                    row.addView(kv, lp)
                 }
 
-                rowConfig.keys.forEach { key ->
-                    row.addView(
-                        createKey(key.label),
-                        LinearLayout.LayoutParams(0, keyHeight(), 1f)
-                    )
-                }
-
-                if (stagger) {
-                    row.addView(View(this), LinearLayout.LayoutParams(0, 0, 0.5f))
-                }
-
-                val lp = LinearLayout.LayoutParams(
+                val lpRow = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                if (idx > 0 && overlap > 0) lp.topMargin = -overlap
 
-                keyboardContainer.addView(row, lp)
+                if (rowIndex > 0 && sizing.overlapPx > 0) {
+                    lpRow.topMargin = -sizing.overlapPx
+                }
+
+                keyboardContainer.addView(row, lpRow)
             }
 
-            // Right special row (bez staggera)
-            val specialRightRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            currentKeyboardConfig.specialRight.forEach { key ->
-                specialRightRow.addView(
-                    createKey(key.label),
-                    LinearLayout.LayoutParams(0, keyHeight(), 1f)
-                )
+            // special left
+            if (currentKeyboardConfig.specialLeft.isNotEmpty()) {
+                buildRow(currentKeyboardConfig.specialLeft, 0)
             }
-            keyboardContainer.addView(specialRightRow)
+
+            // main rows
+            currentKeyboardConfig.rows.forEachIndexed { idx, rowConfig ->
+                val rowIndex = idx + if (currentKeyboardConfig.specialLeft.isNotEmpty()) 1 else 0
+                buildRow(rowConfig.keys, rowIndex)
+            }
+
+            // special right
+            if (currentKeyboardConfig.specialRight.isNotEmpty()) {
+                val rowIndex = currentKeyboardConfig.rows.size +
+                        if (currentKeyboardConfig.specialLeft.isNotEmpty()) 1 else 0
+                buildRow(currentKeyboardConfig.specialRight, rowIndex)
+            }
 
             isDrawing = false
         }
     }
 
     /* ───────── KEY VIEW ───────── */
-    private fun createKey(text: String): KeyView = KeyView(this).apply {
-        this.text = text
+    private fun createKey(keyConfig: KeyConfig): KeyView = KeyView(this).apply {
+        val label = keyConfig.label
+
+        text = label
         isAllCaps = false
         setTextColor(0xFFFFFFFF.toInt())
         textSize = if (isPortrait()) 18f else 16f
         gravity = android.view.Gravity.CENTER
 
-        // shape (HEX/TRI/CIRCLE/CUBE)
         shape = currentShape
+        isSpecial = (label == "↵" || label == "⌫")
 
-        // “special” naglasi (po želji)
-        isSpecial = text == "↵"
-
-        // touch
         setOnTouchListener { v, e -> handleTouch(v as TextView, e) }
 
-        // long press: samo za normalne tipke iz rows
+        val nonBindable = setOf("⇧", "⌫", "↵", "123", "ABC", "abc", " ")
         setOnLongClickListener {
-            val keyConfig = currentKeyboardConfig.findKey(text) ?: return@setOnLongClickListener false
+            if (label in nonBindable) return@setOnLongClickListener false
+
             val binds = keyConfig.longPressBindings
-            if (binds.isEmpty()) openBindLongPressDialog()
-            else SpecialCharsDialog(context, binds) { currentInputConnection?.commitText(it, 1) }.show()
+            if (binds.isEmpty()) {
+                BindLongPressDialog(context, currentKeyboardConfig) { bind ->
+                    if (!keyConfig.longPressBindings.contains(bind.charValue)) {
+                        keyConfig.longPressBindings.add(bind.charValue)
+                    }
+                    KeyboardPrefs.saveLayout(context, currentKeyboardConfig)
+                    Toast.makeText(context, "Bind: $label → ${bind.charValue}", Toast.LENGTH_SHORT).show()
+                }.show()
+            } else {
+                SpecialCharsDialog(context, binds) { chosen ->
+                    currentInputConnection?.commitText(chosen, 1)
+                }.show()
+            }
             true
         }
-    }
-
-    private fun openBindLongPressDialog() {
-        BindLongPressDialog(this, currentKeyboardConfig) { key, char ->
-            currentKeyboardConfig.addLongPress(key, char)
-            KeyboardPrefs.saveLayout(this, currentKeyboardConfig)
-            Toast.makeText(this, "Bind: $key → $char", Toast.LENGTH_SHORT).show()
-        }.show()
     }
 
     /* ───────── TOUCH / CLICK ───────── */
@@ -228,34 +349,27 @@ class MyKeyboardService : InputMethodService() {
                 swipeStartY = e.y
 
                 val t = view.text.toString()
-                // ne pokazuj preview za specijalne
-                if (t !in listOf("⇧", " ", "123", "↵", "⌫", "ABC")) {
-                    showKeyPreview(view)
-                }
-                // radi pressed state (KeyView će promijenit boju)
+                if (t !in listOf("⇧", " ", "123", "↵", "⌫", "ABC", "abc")) showKeyPreview(view)
+
                 view.isPressed = true
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val dx = e.x - swipeStartX
-                val dy = e.y - swipeStartY
-
                 view.isPressed = false
                 hideKeyPreview()
 
-                // swipe up: force uppercase (samo za slova)
+                val dy = e.y - swipeStartY
                 val text = view.text.toString()
-                when {
-                    dy < -60 && text.length == 1 && text[0].isLetter() -> {
-                        currentInputConnection?.commitText(text.uppercase(), 1)
-                        return true
-                    }
-                    else -> {
-                        handleClick(text)
-                        return true
-                    }
+
+                // swipe up: force uppercase slova
+                if (dy < -60 && text.length == 1 && text[0].isLetter()) {
+                    currentInputConnection?.commitText(text.uppercase(), 1)
+                    return true
                 }
+
+                handleClick(text)
+                return true
             }
         }
         return false
@@ -266,19 +380,21 @@ class MyKeyboardService : InputMethodService() {
             "123" -> {
                 alphabetLayout = currentKeyboardConfig
                 currentKeyboardConfig = myDefaultNumericConfig
+                // u numeric layoutu ne mičemo edge keys
                 redrawKeyboard()
             }
-            "ABC" -> {
+
+            "ABC", "abc" -> {
                 currentKeyboardConfig = alphabetLayout ?: KeyboardPrefs.loadLayout(this)
+                currentKeyboardConfig = applyEdgeKeys(currentKeyboardConfig)
                 redrawKeyboard()
             }
-            "⇧" -> {
-                isShifted = !isShifted
-                // (ako želiš da se tipke vizualno promijene, možemo to kasnije dodati)
-            }
+
+            "⇧" -> isShifted = !isShifted
             "⌫" -> currentInputConnection?.deleteSurroundingText(1, 0)
             "↵" -> currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             " " -> currentInputConnection?.commitText(" ", 1)
+
             else -> {
                 val out =
                     if (text.length == 1 && text[0].isLetter()) {
@@ -289,7 +405,7 @@ class MyKeyboardService : InputMethodService() {
         }
     }
 
-    /* ───────── INNER CLASSES (ako ti treba negdje) ───────── */
+    /* ───────── INNER CLASSES ───────── */
     class CharSelectorAdapter(
         private val items: List<String>,
         private val onItemClick: (String) -> Unit

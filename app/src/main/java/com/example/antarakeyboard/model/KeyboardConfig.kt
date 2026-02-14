@@ -15,8 +15,8 @@ data class RowConfig(
 
 data class KeyboardConfig(
     var rows: MutableList<RowConfig>,
-    var specialLeft: MutableList<KeyConfig>,
-    var specialRight: MutableList<KeyConfig>
+    var specialLeft: MutableList<KeyConfig> = mutableListOf(),
+    var specialRight: MutableList<KeyConfig> = mutableListOf()
 )
 
 /* =========================
@@ -36,32 +36,3 @@ fun KeyboardConfig.addLongPress(keyLabel: String, char: String) {
         key.longPressBindings.add(char)
     }
 }
-
-/* =========================
-   DEFAULT LAYOUT
-   ========================= */
-
-val myDefaultKeyboardConfig = KeyboardConfig(
-    specialLeft = mutableListOf(KeyConfig("⇧")),
-    specialRight = mutableListOf(KeyConfig("⌫")),
-    rows = mutableListOf(
-        RowConfig(mutableListOf(
-            KeyConfig("W"), KeyConfig("E"), KeyConfig("T"),
-            KeyConfig("Z"), KeyConfig("I"), KeyConfig("O")
-        )),
-        RowConfig(mutableListOf(
-            KeyConfig("Q"), KeyConfig("A"), KeyConfig("R"),
-            KeyConfig("G"), KeyConfig("U"), KeyConfig("L"), KeyConfig("P")
-        )),
-        RowConfig(mutableListOf(
-            KeyConfig("Y"), KeyConfig("S"), KeyConfig("D"),
-            KeyConfig("N"), KeyConfig("M"), KeyConfig("J"), KeyConfig("K")
-        )),
-        RowConfig(mutableListOf(
-            KeyConfig("X"), KeyConfig("C"), KeyConfig("V"), KeyConfig("B")
-        )),
-        RowConfig(mutableListOf(
-            KeyConfig("123"), KeyConfig(" "), KeyConfig("↵")
-        ))
-    )
-)

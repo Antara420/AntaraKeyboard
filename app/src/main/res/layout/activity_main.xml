@@ -77,5 +77,13 @@
         android:layout_height="wrap_content"
         android:text="Bind LongPress" />
 
+    <Button
+        android:id="@+id/resetLayoutButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Reset Layout"
+        android:layout_marginTop="12dp"/>
+
+
 
 </LinearLayout>

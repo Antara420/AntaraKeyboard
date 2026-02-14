@@ -3,8 +3,8 @@ package com.example.antarakeyboard.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.antarakeyboard.model.KeyboardConfig
-import com.example.antarakeyboard.model.myDefaultKeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
+import com.example.antarakeyboard.ui.defaultKeyboardLayout
 import com.google.gson.Gson
 
 object KeyboardPrefs {
@@ -31,8 +31,8 @@ object KeyboardPrefs {
     /* ───────── SHAPE ───────── */
 
     fun getShape(context: Context): KeyShape {
-        val name = prefs(context).getString(KEY_SHAPE, KeyShape.HEX.name)
-        return KeyShape.valueOf(name!!)
+        val name = prefs(context).getString(KEY_SHAPE, KeyShape.HEX.name) ?: KeyShape.HEX.name
+        return KeyShape.valueOf(name)
     }
 
     fun setShape(context: Context, shape: KeyShape) {
@@ -48,10 +48,11 @@ object KeyboardPrefs {
 
     fun loadLayout(context: Context): KeyboardConfig {
         val json = prefs(context).getString(KEY_LAYOUT_JSON, null)
-        return if (json != null) {
+        return if (!json.isNullOrBlank()) {
             gson.fromJson(json, KeyboardConfig::class.java)
         } else {
-            myDefaultKeyboardConfig
+            // ✅ fallback na default layout
+            defaultKeyboardLayout
         }
     }
 
