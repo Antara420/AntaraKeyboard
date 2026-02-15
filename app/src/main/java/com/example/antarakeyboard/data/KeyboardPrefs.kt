@@ -13,11 +13,25 @@ object KeyboardPrefs {
     private const val KEY_SCALE = "key_scale"
     private const val KEY_SHAPE = "key_shape"
     private const val KEY_LAYOUT_JSON = "layout_json"
+    private const val KEY_HEIGHT_PX = "key_height_px"
 
     private val gson = Gson()
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /* ───────── KEY HEIGHT (px) ───────── */
+
+    fun getKeyHeightPx(context: Context): Int =
+        prefs(context).getInt(KEY_HEIGHT_PX, 0) // 0 = auto
+
+    fun setKeyHeightPx(context: Context, px: Int) {
+        prefs(context).edit().putInt(KEY_HEIGHT_PX, px).apply()
+    }
+
+    fun clearKeyHeightPx(context: Context) {
+        prefs(context).edit().remove(KEY_HEIGHT_PX).apply()
+    }
 
     /* ───────── SCALE ───────── */
 
@@ -51,7 +65,6 @@ object KeyboardPrefs {
         return if (!json.isNullOrBlank()) {
             gson.fromJson(json, KeyboardConfig::class.java)
         } else {
-            // ✅ fallback na default layout
             defaultKeyboardLayout
         }
     }
