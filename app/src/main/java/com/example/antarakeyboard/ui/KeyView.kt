@@ -147,28 +147,28 @@ class KeyView @JvmOverloads constructor(
     }
 
     private fun buildTriangle(p: Path, l: Float, t: Float, r: Float, b: Float, flipped: Boolean) {
-        val w = r - l
-        val h = b - t
-
-        // Minimalni inset da trokut ne dodiruje stroke rubove
-        val inset = min(w, h) * 0.02f
-
-        val left = l + inset
-        val top = t + inset
-        val right = r - inset
-        val bottom = b - inset
+        // ✅ bez insett-a da trokut bude maksimalan
+        val left = l
+        val top = t
+        val right = r
+        val bottom = b
 
         if (!flipped) {
+            // vrh gore
             p.moveTo(left + (right - left) * 0.5f, top)
             p.lineTo(left, bottom)
             p.lineTo(right, bottom)
         } else {
+            // vrh dolje
             p.moveTo(left, top)
             p.lineTo(right, top)
             p.lineTo(left + (right - left) * 0.5f, bottom)
         }
         p.close()
     }
+
+
+
 
     private fun buildCircle(p: Path, l: Float, t: Float, r: Float, b: Float) {
         p.addOval(l, t, r, b, Path.Direction.CW)

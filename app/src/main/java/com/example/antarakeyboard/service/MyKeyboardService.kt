@@ -142,11 +142,12 @@ class MyKeyboardService : InputMethodService() {
         val manual = KeyboardPrefs.getKeyHeightPx(this)
         if (manual > 0) return manual.coerceIn(dp(28), dp(140))
 
-        // fallback: stari auto
+        // fallback auto (ako manual nije postavljen)
         val base = (resources.displayMetrics.heightPixels * if (isPortrait()) 0.07 else 0.05).toInt()
-        val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f)
+        val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f) // može ostati dok ne izbaciš scale
         return (base * scale).toInt().coerceAtLeast(dp(36))
     }
+
 
     private fun availableKeyboardWidthPx(): Int {
         val w = rootView.width
@@ -185,41 +186,73 @@ class MyKeyboardService : InputMethodService() {
 
     /* ───────── LAYOUT MATH (6 vs 7) ───────── */
     private data class RowSizing(
-        val keySizePx: Int,
+        val keyW: Int,
+        val keyH: Int,
         val gapPx: Int,
         val outerPadPx: Int,
-        val overlapPx: Int
+        val overlapPx: Int,      // (hex vert overlap)
+        val triOverlapX: Int,    // triangle horizontal overlap
+        val triOverlapY: Int     // triangle vertical overlap
     )
 
-    private fun computeRowSizing(count: Int, availW: Int): RowSizing {
-        val gap = dp(KEY_GAP_DP)
-        val stdKey = ((availW - (7 - 1) * gap) / 7f).toInt().coerceAtLeast(dp(36))
 
-        val keySize: Int
+    private fun computeRowSizing(count: Int, availW: Int): RowSizing {
+        val gap = gapPxForShape()
+
+        val stdKeyW = ((availW - (7 - 1) * gap) / 7f).toInt().coerceAtLeast(dp(36))
+
+        val keyW: Int
         val outer: Int
 
         if (count == 7) {
-            keySize = ((availW - (count - 1) * gap) / count.toFloat()).toInt().coerceAtLeast(dp(36))
+            keyW = ((availW - (count - 1) * gap) / count.toFloat()).toInt().coerceAtLeast(dp(36))
             outer = 0
         } else if (count == 6) {
-            keySize = stdKey
-            val used = count * keySize + (count - 1) * gap
+            keyW = stdKeyW
+            val used = count * keyW + (count - 1) * gap
             outer = ((availW - used) / 2).coerceAtLeast(0)
         } else {
-            keySize = ((availW - (count - 1) * gap) / max(1, count).toFloat()).toInt().coerceAtLeast(dp(36))
+            keyW = ((availW - (count - 1) * gap) / max(1, count).toFloat()).toInt().coerceAtLeast(dp(36))
             outer = 0
         }
 
-        val limitedKey = minOf(keySize, keyHeight())
-        val overlap = if (currentShape == KeyShape.HEX) (limitedKey * OVERLAP_RATIO).toInt() else 0
+        val keyH = keyHeight()
+
+        // HEX vertical overlap
+        val overlap = if (currentShape == KeyShape.HEX) (keyH * OVERLAP_RATIO).toInt() else 0
+
+        // ✅ TRI stiskanje (1–2px)
+        val triOX = if (currentShape == KeyShape.TRIANGLE) dp(2) else 0
+        val triOY = if (currentShape == KeyShape.TRIANGLE) dp(2) else 0
+
+        // triangle neka nema outer padding “prazninu”
+        val finalOuter = if (currentShape == KeyShape.TRIANGLE) 0 else outer
 
         return RowSizing(
-            keySizePx = limitedKey,
+            keyW = keyW,
+            keyH = keyH,
             gapPx = gap,
-            outerPadPx = outer,
-            overlapPx = overlap
+            outerPadPx = finalOuter,
+            overlapPx = overlap,
+            triOverlapX = triOX,
+            triOverlapY = triOY
         )
     }
+
+
+    private fun gapPxForShape(): Int {
+        return when (currentShape) {
+            KeyShape.TRIANGLE -> 0
+            else -> dp(KEY_GAP_DP)
+        }
+    }
+
+
+
+
+
+
+
 
     /* ───────── REDRAW ───────── */
     private fun redrawKeyboard() {
@@ -237,7 +270,13 @@ class MyKeyboardService : InputMethodService() {
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    setPadding(sizing.outerPadPx, dp(ROW_PAD_V_DP), sizing.outerPadPx, dp(ROW_PAD_V_DP))
+
+                    val vPad = when (currentShape) {
+                        KeyShape.TRIANGLE -> dp(1)
+                        else -> (sizing.keyH * 0.05f).toInt().coerceIn(dp(1), dp(8))
+                    }
+
+                    setPadding(sizing.outerPadPx, vPad, sizing.outerPadPx, vPad)
                     clipToPadding = false
                 }
 
@@ -248,8 +287,16 @@ class MyKeyboardService : InputMethodService() {
                         kv.triangleFlipped = (i % 2 == 1)
                     }
 
-                    val lp = LinearLayout.LayoutParams(sizing.keySizePx, sizing.keySizePx)
-                    if (i > 0) lp.leftMargin = sizing.gapPx
+                    val lp = LinearLayout.LayoutParams(sizing.keyW, sizing.keyH)
+
+                    if (i > 0) {
+                        lp.leftMargin = when (currentShape) {
+                            // ✅ gap=0 pa dodajemo negativni overlap da se “zbiju”
+                            KeyShape.TRIANGLE -> (sizing.gapPx - sizing.triOverlapX)
+                            else -> sizing.gapPx
+                        }
+                    }
+
                     row.addView(kv, lp)
                 }
 
@@ -257,10 +304,19 @@ class MyKeyboardService : InputMethodService() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                if (rowIndex > 0 && sizing.overlapPx > 0) lpRow.topMargin = -sizing.overlapPx
+
+                if (rowIndex > 0) {
+                    lpRow.topMargin = when (currentShape) {
+                        KeyShape.HEX -> -sizing.overlapPx
+                        KeyShape.TRIANGLE -> -sizing.triOverlapY
+                        else -> 0
+                    }
+                }
 
                 keyboardContainer.addView(row, lpRow)
             }
+
+
 
             // special left
             if (currentKeyboardConfig.specialLeft.isNotEmpty()) {
@@ -360,7 +416,9 @@ class MyKeyboardService : InputMethodService() {
                 box.addView(icon)
 
                 // vertikalno: centar u rowView
-                val top = rowView.top + ((rowView.height - iconBoxH) / 2).coerceAtLeast(0)
+// ✅ vertikalno: centar u rowView (float, stabilnije od top/height int)
+                val rowCenterY = rowView.y + rowView.height / 2f
+                val top = (rowCenterY - iconBoxH / 2f).toInt()
 
                 // horizontalno: centar unutar lijevog/desnog gap-a
                 val leftInParent = if (pos.side == EdgePos.Side.LEFT) {
