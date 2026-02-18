@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.*
@@ -55,14 +56,6 @@ class MainActivity : AppCompatActivity() {
     private val minKeyDp = 36
     private val maxKeyDp = 90
     private val defaultKeyDp = 52
-
-    // jednostavna paleta (možeš proširiti)
-    private val palette: List<Int> = listOf(
-        0xFF000000.toInt(), 0xFF222222.toInt(), 0xFF3E3E3E.toInt(), 0xFF585858.toInt(),
-        0xFFFFFFFF.toInt(), 0xFFFF5252.toInt(), 0xFFFF9800.toInt(), 0xFFFFEB3B.toInt(),
-        0xFF4CAF50.toInt(), 0xFF00BCD4.toInt(), 0xFF2196F3.toInt(), 0xFF3F51B5.toInt(),
-        0xFF9C27B0.toInt(), 0xFFE91E63.toInt(), 0xFF795548.toInt(), 0xFF607D8B.toInt()
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -137,7 +130,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
         }
 
-        // Slider: key height only
         setupKeyHeightSlider()
     }
 
@@ -166,32 +158,43 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, 0)
         }
 
-        fun colorPreviewButton(label: String, getColor: () -> Int, onPick: (Int) -> Unit): Button {
-            return Button(this).apply {
-                text = label
-                isAllCaps = false
-                setBackgroundColor(getColor())
-                setTextColor(0xFFFFFFFF.toInt())
-                setOnClickListener {
-                    showPalettePicker("Pick $label", getColor()) { picked ->
-                        onPick(picked)
-                        setBackgroundColor(getColor())
+        lateinit var b1: Button
+        lateinit var b2: Button
+
+        fun styleColorButton(btn: Button, color: Int) {
+            btn.setBackgroundColor(color)
+            btn.setTextColor(0xFFFFFFFF.toInt())
+        }
+
+        b1 = Button(this).apply {
+            text = "Space 1"
+            isAllCaps = false
+            styleColorButton(this, c1)
+            setOnClickListener {
+                showAdvancedColorPicker("Space 1 color", c1) { picked ->
+                    c1 = picked
+                    styleColorButton(b1, c1)
+                    if (linked) {
+                        c2 = picked
+                        styleColorButton(b2, c2)
                     }
                 }
             }
         }
 
-        val b1 = colorPreviewButton("Space 1", { c1 }) { picked ->
-            c1 = picked
-            if (linked) {
-                c2 = picked
-            }
-        }
-
-        val b2 = colorPreviewButton("Space 2", { c2 }) { picked ->
-            c2 = picked
-            if (linked) {
-                c1 = picked
+        b2 = Button(this).apply {
+            text = "Space 2"
+            isAllCaps = false
+            styleColorButton(this, c2)
+            setOnClickListener {
+                showAdvancedColorPicker("Space 2 color", c2) { picked ->
+                    c2 = picked
+                    styleColorButton(b2, c2)
+                    if (linked) {
+                        c1 = picked
+                        styleColorButton(b1, c1)
+                    }
+                }
             }
         }
 
@@ -210,7 +213,7 @@ class MainActivity : AppCompatActivity() {
             linked = isChecked
             if (linked) {
                 c2 = c1
-                b2.setBackgroundColor(c2)
+                styleColorButton(b2, c2)
             }
         }
 
@@ -225,6 +228,7 @@ class MainActivity : AppCompatActivity() {
             }
             .show()
     }
+
 
     private fun showEnterColorDialog() {
         var bg = KeyboardPrefs.getEnterBg(this)
@@ -241,7 +245,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(bg)
             setTextColor(0xFFFFFFFF.toInt())
             setOnClickListener {
-                showPalettePicker("Enter background", bg) { picked ->
+                showAdvancedColorPicker("Enter background", bg) { picked ->
                     bg = picked
                     setBackgroundColor(bg)
                 }
@@ -254,7 +258,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFF222222.toInt())
             setTextColor(icon)
             setOnClickListener {
-                showPalettePicker("Enter icon color", icon) { picked ->
+                showAdvancedColorPicker("Enter icon color", icon) { picked ->
                     icon = picked
                     setTextColor(icon)
                 }
@@ -280,33 +284,75 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showPalettePicker(title: String, current: Int, onPicked: (Int) -> Unit) {
-        val grid = GridLayout(this).apply {
-            columnCount = 4
-            setPadding(dp(12), dp(12), dp(12), dp(4))
+    /**
+     * HSV(A) picker: Hue/Sat/Value + Alpha
+     * Važno: onPicked se zove live, ali prefs spremaš tek na "Save" u parent dialogu.
+     */
+    private fun showAdvancedColorPicker(
+        title: String,
+        initialColor: Int,
+        onPicked: (Int) -> Unit
+    ) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(initialColor, hsv)
+        var alpha = android.graphics.Color.alpha(initialColor)
+
+        var currentColor = initialColor
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(8))
         }
 
-        palette.forEach { c ->
-            val v = TextView(this).apply {
-                setBackgroundColor(c)
-                width = dp(48)
-                height = dp(48)
-                setOnClickListener {
-                    onPicked(c)
-                }
-            }
-            val lp = ViewGroup.MarginLayoutParams(dp(48), dp(48)).apply {
-                setMargins(dp(6), dp(6), dp(6), dp(6))
-            }
-            grid.addView(v, lp)
+        val previewBar = View(this).apply {
+            setBackgroundColor(initialColor)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
         }
+        root.addView(previewBar)
+
+        val hueSeek = SeekBar(this).apply { max = 360; progress = hsv[0].toInt() }
+        val satSeek = SeekBar(this).apply { max = 100; progress = (hsv[1] * 100).toInt() }
+        val valSeek = SeekBar(this).apply { max = 100; progress = (hsv[2] * 100).toInt() }
+        val alphaSeek = SeekBar(this).apply { max = 255; progress = alpha }
+
+        fun recompute() {
+            hsv[0] = hueSeek.progress.toFloat()
+            hsv[1] = satSeek.progress / 100f
+            hsv[2] = valSeek.progress / 100f
+            alpha = alphaSeek.progress
+
+            currentColor = android.graphics.Color.HSVToColor(alpha, hsv)
+            previewBar.setBackgroundColor(currentColor)
+            onPicked(currentColor)
+        }
+
+        hueSeek.setOnSeekBarChangeListener(simpleSeek { recompute() })
+        satSeek.setOnSeekBarChangeListener(simpleSeek { recompute() })
+        valSeek.setOnSeekBarChangeListener(simpleSeek { recompute() })
+        alphaSeek.setOnSeekBarChangeListener(simpleSeek { recompute() })
+
+        root.addView(TextView(this).apply { text = "Hue" })
+        root.addView(hueSeek)
+        root.addView(TextView(this).apply { text = "Saturation" })
+        root.addView(satSeek)
+        root.addView(TextView(this).apply { text = "Brightness" })
+        root.addView(valSeek)
+        root.addView(TextView(this).apply { text = "Alpha" })
+        root.addView(alphaSeek)
 
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setView(grid)
-            .setNegativeButton("Close", null)
+            .setView(root)
+            .setPositiveButton("Done", null)
             .show()
     }
+
+    private fun simpleSeek(onChange: () -> Unit) =
+        object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) = onChange()
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        }
 
     /* =========================
        KEY HEIGHT SLIDER (only)
@@ -337,14 +383,10 @@ class MainActivity : AppCompatActivity() {
 
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 pendingKeyHeightPx = pxFromProgress(progress, minPx, maxPx)
-                if (sizePreviewDialog?.isShowing == true) {
-                    updatePreviewKeyHeights(pendingKeyHeightPx)
-                }
+                if (sizePreviewDialog?.isShowing == true) updatePreviewKeyHeights(pendingKeyHeightPx)
             }
 
-            override fun onStopTrackingTouch(sb: SeekBar?) {
-                // ništa dok se ne klikne OK
-            }
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
     }
 
@@ -376,9 +418,7 @@ class MainActivity : AppCompatActivity() {
         val cfg = KeyboardPrefs.loadLayout(this)
         buildKeyboardPreview(cfg, pendingKeyHeightPx)
 
-        d.window?.decorView?.post {
-            updatePreviewKeyHeights(pendingKeyHeightPx)
-        }
+        d.window?.decorView?.post { updatePreviewKeyHeights(pendingKeyHeightPx) }
 
         cancelBtn?.setOnClickListener {
             pendingKeyHeightPx = savedKeyHeightPx
@@ -414,10 +454,7 @@ class MainActivity : AppCompatActivity() {
         fun addRow(labels: List<String>) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             labels.forEach { label ->
-                row.addView(
-                    createPreviewKey(label),
-                    LinearLayout.LayoutParams(0, keyHeightPx, 1f)
-                )
+                row.addView(createPreviewKey(label), LinearLayout.LayoutParams(0, keyHeightPx, 1f))
             }
             container.addView(row)
         }
@@ -437,9 +474,7 @@ class MainActivity : AppCompatActivity() {
             val row = container.getChildAt(i) as? LinearLayout ?: continue
             for (j in 0 until row.childCount) {
                 val child = row.getChildAt(j)
-                val lp = child.layoutParams
-                lp.height = keyHeightPx
-                child.layoutParams = lp
+                child.layoutParams = child.layoutParams.apply { height = keyHeightPx }
             }
         }
         container.requestLayout()
