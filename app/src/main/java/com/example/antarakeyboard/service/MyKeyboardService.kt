@@ -119,23 +119,18 @@ class MyKeyboardService : InputMethodService() {
 
     /* ───────── EDGE KEYS: remove from layout (overlay only) ───────── */
     private fun applyEdgeKeys(cfg: KeyboardConfig): KeyboardConfig {
-        var shiftPos = EdgeKeyPrefs.getShift(this)
-        var bkspPos = EdgeKeyPrefs.getBackspace(this)
+        val copy = cfg.copy(
+            rows = cfg.rows.map { r -> r.copy(keys = r.keys.toMutableList()) }.toMutableList(),
+            specialLeft = cfg.specialLeft.toMutableList(),
+            specialRight = cfg.specialRight.toMutableList()
+        )
 
-        // safety: ne smiju biti isti slot
-        if (shiftPos.row == bkspPos.row && shiftPos.side == bkspPos.side) {
-            shiftPos = EdgePos(3, EdgePos.Side.LEFT)
-            bkspPos = EdgePos(3, EdgePos.Side.RIGHT)
-            EdgeKeyPrefs.setShift(this, shiftPos)
-            EdgeKeyPrefs.setBackspace(this, bkspPos)
-        }
-
-        // Makni ⇧ i ⌫ iz svih redova
-        cfg.rows.forEach { row ->
+        copy.rows.forEach { row ->
             row.keys.removeAll { it.label == "⇧" || it.label == "⌫" }
         }
-        return cfg
+        return copy
     }
+
 
     /* ───────── HELPERS ───────── */
     private fun isPortrait() = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT

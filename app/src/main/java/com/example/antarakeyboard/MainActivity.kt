@@ -77,6 +77,21 @@ class MainActivity : AppCompatActivity() {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             imm.showInputMethodPicker()
         }
+        val btnSetLayout: Button = findViewById(R.id.btnSetLayout)
+
+        btnSetLayout.setOnClickListener {
+            val cfg = KeyboardPrefs.loadLayout(this)
+            com.example.antarakeyboard.ui.UserLayoutDialog(
+                context = this,
+                initial = cfg
+            ) { updated ->
+                KeyboardPrefs.saveLayout(this, updated)
+                Toast.makeText(this, "Layout saved ✅", Toast.LENGTH_SHORT).show()
+                // KeyboardService će ga povuć čim se tipkovnica sljedeći put prikaže,
+                // a često i odmah kad se vratiš u polje za unos.
+            }.show()
+        }
+
 
         seek = findViewById(R.id.sizeSeek)
         preview = findViewById(R.id.preview)
