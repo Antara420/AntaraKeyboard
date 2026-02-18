@@ -6,6 +6,17 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <!-- TITLE -->
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Antara Keyboard"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="12dp" />
+
     <!-- 1) Enable keyboard -->
     <androidx.appcompat.widget.AppCompatButton
         android:id="@+id/btnEnableKeyboard"
@@ -92,6 +103,23 @@
         android:layout_height="wrap_content"
         android:text="Reset Layout"
         android:layout_marginTop="12dp"
+        app:textAllCaps="false" />
+
+    <!-- NEW: Colors -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btnSpaceColor"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Space color"
+        android:layout_marginTop="14dp"
+        app:textAllCaps="false" />
+
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btnEnterColor"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enter color"
+        android:layout_marginTop="8dp"
         app:textAllCaps="false" />
 
 </LinearLayout>

@@ -1,7 +1,9 @@
 package com.example.antarakeyboard
 
 import android.app.Dialog
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
@@ -18,9 +20,6 @@ import com.example.antarakeyboard.model.addLongPress
 import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.ShapePreviewView
 import kotlin.math.roundToInt
-import android.content.Intent
-import android.provider.Settings
-
 
 class MainActivity : AppCompatActivity() {
 
@@ -57,25 +56,34 @@ class MainActivity : AppCompatActivity() {
     private val maxKeyDp = 90
     private val defaultKeyDp = 52
 
+    // jednostavna paleta (možeš proširiti)
+    private val palette: List<Int> = listOf(
+        0xFF000000.toInt(), 0xFF222222.toInt(), 0xFF3E3E3E.toInt(), 0xFF585858.toInt(),
+        0xFFFFFFFF.toInt(), 0xFFFF5252.toInt(), 0xFFFF9800.toInt(), 0xFFFFEB3B.toInt(),
+        0xFF4CAF50.toInt(), 0xFF00BCD4.toInt(), 0xFF2196F3.toInt(), 0xFF3F51B5.toInt(),
+        0xFF9C27B0.toInt(), 0xFFE91E63.toInt(), 0xFF795548.toInt(), 0xFF607D8B.toInt()
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         val btnEnableKeyboard: Button = findViewById(R.id.btnEnableKeyboard)
         val btnChooseKeyboard: Button = findViewById(R.id.btnChooseKeyboard)
+        val btnSpaceColor: Button = findViewById(R.id.btnSpaceColor)
+        val btnEnterColor: Button = findViewById(R.id.btnEnterColor)
+
+        btnSpaceColor.setOnClickListener { showSpaceColorDialog() }
+        btnEnterColor.setOnClickListener { showEnterColorDialog() }
 
         btnEnableKeyboard.setOnClickListener {
-            // Otvara ekran gdje se uključe tipkovnice (enable)
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }
 
         btnChooseKeyboard.setOnClickListener {
-            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                    as android.view.inputmethod.InputMethodManager
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             imm.showInputMethodPicker()
         }
-
-
 
         seek = findViewById(R.id.sizeSeek)
         preview = findViewById(R.id.preview)
@@ -115,23 +123,189 @@ class MainActivity : AppCompatActivity() {
         resetLayoutButton.setOnClickListener {
             KeyboardPrefs.clearLayout(this)
             KeyboardPrefs.setShape(this, KeyShape.HEX)
-
-            // reset key height na "auto"
             KeyboardPrefs.clearKeyHeightPx(this)
 
-            // reset edge keys na default
+            // reset colors
+            KeyboardPrefs.setSpaceColors(this, 0xFF3E3E3E.toInt(), 0xFF3E3E3E.toInt(), true)
+            KeyboardPrefs.setEnterColors(this, 0xFF2E55E7.toInt(), 0xFFFFFFFF.toInt())
+
             EdgeKeyPrefs.setShift(this, EdgePos(3, EdgePos.Side.LEFT))
             EdgeKeyPrefs.setBackspace(this, EdgePos(3, EdgePos.Side.RIGHT))
             updateEdgeLabels()
 
-            // reset slider poziciju na default
             setupKeyHeightSlider()
-
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
         }
 
         // Slider: key height only
         setupKeyHeightSlider()
+    }
+
+    /* =========================
+       SPACE / ENTER COLOR DIALOGS
+       ========================= */
+
+    private fun showSpaceColorDialog() {
+        var linked = KeyboardPrefs.isSpaceLinked(this)
+        var c1 = KeyboardPrefs.getSpace1Bg(this)
+        var c2 = KeyboardPrefs.getSpace2Bg(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(4))
+        }
+
+        val cb = CheckBox(this).apply {
+            text = "Both space keys same color"
+            isChecked = linked
+        }
+        root.addView(cb)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+        }
+
+        fun colorPreviewButton(label: String, getColor: () -> Int, onPick: (Int) -> Unit): Button {
+            return Button(this).apply {
+                text = label
+                isAllCaps = false
+                setBackgroundColor(getColor())
+                setTextColor(0xFFFFFFFF.toInt())
+                setOnClickListener {
+                    showPalettePicker("Pick $label", getColor()) { picked ->
+                        onPick(picked)
+                        setBackgroundColor(getColor())
+                    }
+                }
+            }
+        }
+
+        val b1 = colorPreviewButton("Space 1", { c1 }) { picked ->
+            c1 = picked
+            if (linked) {
+                c2 = picked
+            }
+        }
+
+        val b2 = colorPreviewButton("Space 2", { c2 }) { picked ->
+            c2 = picked
+            if (linked) {
+                c1 = picked
+            }
+        }
+
+        row.addView(
+            b1,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        )
+        row.addView(
+            b2,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) }
+        )
+
+        root.addView(row)
+
+        cb.setOnCheckedChangeListener { _, isChecked ->
+            linked = isChecked
+            if (linked) {
+                c2 = c1
+                b2.setBackgroundColor(c2)
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Space color")
+            .setView(root)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                if (linked) c2 = c1
+                KeyboardPrefs.setSpaceColors(this, c1, c2, linked)
+                Toast.makeText(this, "Space colors saved", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun showEnterColorDialog() {
+        var bg = KeyboardPrefs.getEnterBg(this)
+        var icon = KeyboardPrefs.getEnterIcon(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(4))
+        }
+
+        val bgBtn = Button(this).apply {
+            text = "Background"
+            isAllCaps = false
+            setBackgroundColor(bg)
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                showPalettePicker("Enter background", bg) { picked ->
+                    bg = picked
+                    setBackgroundColor(bg)
+                }
+            }
+        }
+
+        val iconBtn = Button(this).apply {
+            text = "Icon color"
+            isAllCaps = false
+            setBackgroundColor(0xFF222222.toInt())
+            setTextColor(icon)
+            setOnClickListener {
+                showPalettePicker("Enter icon color", icon) { picked ->
+                    icon = picked
+                    setTextColor(icon)
+                }
+            }
+        }
+
+        root.addView(bgBtn)
+        root.addView(
+            iconBtn,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            }
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Enter color")
+            .setView(root)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                KeyboardPrefs.setEnterColors(this, bg, icon)
+                Toast.makeText(this, "Enter colors saved", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun showPalettePicker(title: String, current: Int, onPicked: (Int) -> Unit) {
+        val grid = GridLayout(this).apply {
+            columnCount = 4
+            setPadding(dp(12), dp(12), dp(12), dp(4))
+        }
+
+        palette.forEach { c ->
+            val v = TextView(this).apply {
+                setBackgroundColor(c)
+                width = dp(48)
+                height = dp(48)
+                setOnClickListener {
+                    onPicked(c)
+                }
+            }
+            val lp = ViewGroup.MarginLayoutParams(dp(48), dp(48)).apply {
+                setMargins(dp(6), dp(6), dp(6), dp(6))
+            }
+            grid.addView(v, lp)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(grid)
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     /* =========================
@@ -149,7 +323,6 @@ class MainActivity : AppCompatActivity() {
 
         seek.max = 100
 
-        // map storedPx -> progress 0..100
         val p = ((savedKeyHeightPx - minPx).toFloat() / (maxPx - minPx).toFloat() * 100f)
             .roundToInt()
             .coerceIn(0, 100)
@@ -203,7 +376,6 @@ class MainActivity : AppCompatActivity() {
         val cfg = KeyboardPrefs.loadLayout(this)
         buildKeyboardPreview(cfg, pendingKeyHeightPx)
 
-        // odmah refresha visine (bez scaleX/scaleY)
         d.window?.decorView?.post {
             updatePreviewKeyHeights(pendingKeyHeightPx)
         }
@@ -215,7 +387,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         okBtn?.setOnClickListener {
-            // ✅ spremamo samo visinu tipke
             KeyboardPrefs.setKeyHeightPx(this, pendingKeyHeightPx.coerceIn(minPx, maxPx))
             Toast.makeText(this, "Key height saved: ${pxToDp(pendingKeyHeightPx)}dp", Toast.LENGTH_SHORT).show()
             d.dismiss()
@@ -251,17 +422,9 @@ class MainActivity : AppCompatActivity() {
             container.addView(row)
         }
 
-        if (config.specialLeft.isNotEmpty()) {
-            addRow(config.specialLeft.map { it.label })
-        }
-
-        config.rows.forEach { rowCfg ->
-            addRow(rowCfg.keys.map { it.label })
-        }
-
-        if (config.specialRight.isNotEmpty()) {
-            addRow(config.specialRight.map { it.label })
-        }
+        if (config.specialLeft.isNotEmpty()) addRow(config.specialLeft.map { it.label })
+        config.rows.forEach { rowCfg -> addRow(rowCfg.keys.map { it.label }) }
+        if (config.specialRight.isNotEmpty()) addRow(config.specialRight.map { it.label })
 
         previewBuilt = true
     }
@@ -395,7 +558,6 @@ class MainActivity : AppCompatActivity() {
                 val side = EdgePos.Side.valueOf(sides[sideSpinner.selectedItemPosition])
                 val newPos = EdgePos(row, side)
 
-                // ✅ jedino pravilo: ne smiju biti isti row+side
                 if (newPos.row == other.row && newPos.side == other.side) {
                     Toast.makeText(this, "SHIFT i BACKSPACE ne mogu biti na istom mjestu.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
@@ -432,8 +594,6 @@ class MainActivity : AppCompatActivity() {
        ========================= */
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
-
     private fun pxToDp(px: Int): Int = (px / resources.displayMetrics.density).toInt()
 }

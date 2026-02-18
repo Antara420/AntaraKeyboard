@@ -10,10 +10,20 @@ import com.google.gson.Gson
 object KeyboardPrefs {
 
     private const val PREFS_NAME = "keyboard_prefs"
+
     private const val KEY_SCALE = "key_scale"
     private const val KEY_SHAPE = "key_shape"
     private const val KEY_LAYOUT_JSON = "layout_json"
     private const val KEY_HEIGHT_PX = "key_height_px"
+
+    // Space colors
+    private const val SPACE_LINKED = "space_linked"
+    private const val SPACE1_BG = "space1_bg"
+    private const val SPACE2_BG = "space2_bg"
+
+    // Enter colors
+    private const val ENTER_BG = "enter_bg"
+    private const val ENTER_ICON = "enter_icon"
 
     private val gson = Gson()
 
@@ -71,5 +81,60 @@ object KeyboardPrefs {
 
     fun clearLayout(context: Context) {
         prefs(context).edit().remove(KEY_LAYOUT_JSON).apply()
+    }
+
+    /* ───────── SPACE COLORS ───────── */
+
+    fun isSpaceLinked(context: Context): Boolean =
+        prefs(context).getBoolean(SPACE_LINKED, true)
+
+    fun setSpaceLinked(context: Context, linked: Boolean) {
+        prefs(context).edit().putBoolean(SPACE_LINKED, linked).apply()
+    }
+
+    fun getSpace1Bg(context: Context): Int =
+        prefs(context).getInt(SPACE1_BG, 0xFF3E3E3E.toInt())
+
+    fun getSpace2Bg(context: Context): Int =
+        prefs(context).getInt(SPACE2_BG, 0xFF3E3E3E.toInt())
+
+    fun setSpace1Bg(context: Context, color: Int) {
+        prefs(context).edit().putInt(SPACE1_BG, color).apply()
+    }
+
+    fun setSpace2Bg(context: Context, color: Int) {
+        prefs(context).edit().putInt(SPACE2_BG, color).apply()
+    }
+
+    /** Helper: spremi oba + linked flag odjednom */
+    fun setSpaceColors(context: Context, c1: Int, c2: Int, linked: Boolean) {
+        prefs(context).edit()
+            .putInt(SPACE1_BG, c1)
+            .putInt(SPACE2_BG, c2)
+            .putBoolean(SPACE_LINKED, linked)
+            .apply()
+    }
+
+    /* ───────── ENTER COLORS ───────── */
+
+    fun getEnterBg(context: Context): Int =
+        prefs(context).getInt(ENTER_BG, 0xFF2E55E7.toInt()) // default plava
+
+    fun getEnterIcon(context: Context): Int =
+        prefs(context).getInt(ENTER_ICON, 0xFFFFFFFF.toInt()) // default bijelo
+
+    fun setEnterBg(context: Context, color: Int) {
+        prefs(context).edit().putInt(ENTER_BG, color).apply()
+    }
+
+    fun setEnterIcon(context: Context, color: Int) {
+        prefs(context).edit().putInt(ENTER_ICON, color).apply()
+    }
+
+    fun setEnterColors(context: Context, bg: Int, icon: Int) {
+        prefs(context).edit()
+            .putInt(ENTER_BG, bg)
+            .putInt(ENTER_ICON, icon)
+            .apply()
     }
 }

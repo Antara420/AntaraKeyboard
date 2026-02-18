@@ -38,6 +38,9 @@ class MyKeyboardService : InputMethodService() {
     private var isShifted = false
     private var isDrawing = false
 
+    // nav bar / gesture inset (da dignemo edge icons)
+    private var lastBottomInsetPx: Int = 0
+
     private var currentKeyboardConfig: KeyboardConfig = defaultKeyboardLayout
     private var alphabetLayout: KeyboardConfig? = null
     private var currentShape: KeyShape = KeyShape.HEX
@@ -61,7 +64,6 @@ class MyKeyboardService : InputMethodService() {
 
     // layout tuning
     private val KEY_GAP_DP = 1
-    private val ROW_PAD_V_DP = 2
     private val OVERLAP_RATIO = 0.25f
 
     /* ───────── LIFECYCLE ───────── */
@@ -74,7 +76,7 @@ class MyKeyboardService : InputMethodService() {
         keyboardContainer = rootView.findViewById<LinearLayout?>(R.id.keyboardContainer)
             ?: throw IllegalStateException("keyboard_view.xml nema LinearLayout id=keyboardContainer")
 
-        // Insets: base + inset
+        // Insets: base + systemBars.bottom
         val basePadL = rootView.paddingLeft
         val basePadT = rootView.paddingTop
         val basePadR = rootView.paddingRight
@@ -82,6 +84,7 @@ class MyKeyboardService : InputMethodService() {
 
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            lastBottomInsetPx = bottomInset
             v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
             insets
         }
@@ -142,12 +145,10 @@ class MyKeyboardService : InputMethodService() {
         val manual = KeyboardPrefs.getKeyHeightPx(this)
         if (manual > 0) return manual.coerceIn(dp(28), dp(140))
 
-        // fallback auto (ako manual nije postavljen)
         val base = (resources.displayMetrics.heightPixels * if (isPortrait()) 0.07 else 0.05).toInt()
-        val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f) // može ostati dok ne izbaciš scale
+        val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f)
         return (base * scale).toInt().coerceAtLeast(dp(36))
     }
-
 
     private fun availableKeyboardWidthPx(): Int {
         val w = rootView.width
@@ -184,17 +185,23 @@ class MyKeyboardService : InputMethodService() {
         previewPopup = null
     }
 
-    /* ───────── LAYOUT MATH (6 vs 7) ───────── */
+    /* ───────── LAYOUT MATH ───────── */
     private data class RowSizing(
         val keyW: Int,
         val keyH: Int,
         val gapPx: Int,
         val outerPadPx: Int,
-        val overlapPx: Int,      // (hex vert overlap)
-        val triOverlapX: Int,    // triangle horizontal overlap
-        val triOverlapY: Int     // triangle vertical overlap
+        val overlapPx: Int,   // hex vertical overlap
+        val triOverlapX: Int, // triangle horizontal "zbijanje"
+        val triOverlapY: Int  // triangle vertical "zbijanje"
     )
 
+    private fun gapPxForShape(): Int {
+        return when (currentShape) {
+            KeyShape.TRIANGLE -> 0
+            else -> dp(KEY_GAP_DP)
+        }
+    }
 
     private fun computeRowSizing(count: Int, availW: Int): RowSizing {
         val gap = gapPxForShape()
@@ -218,14 +225,12 @@ class MyKeyboardService : InputMethodService() {
 
         val keyH = keyHeight()
 
-        // HEX vertical overlap
-        val overlap = if (currentShape == KeyShape.HEX) (keyH * OVERLAP_RATIO).toInt() else 0
+        val hexOverlap = if (currentShape == KeyShape.HEX) (keyH * OVERLAP_RATIO).toInt() else 0
 
-        // ✅ TRI stiskanje (1–2px)
+        // trokuti: stisni 1–2dp (po osjećaju)
         val triOX = if (currentShape == KeyShape.TRIANGLE) dp(2) else 0
         val triOY = if (currentShape == KeyShape.TRIANGLE) dp(2) else 0
 
-        // triangle neka nema outer padding “prazninu”
         val finalOuter = if (currentShape == KeyShape.TRIANGLE) 0 else outer
 
         return RowSizing(
@@ -233,26 +238,11 @@ class MyKeyboardService : InputMethodService() {
             keyH = keyH,
             gapPx = gap,
             outerPadPx = finalOuter,
-            overlapPx = overlap,
+            overlapPx = hexOverlap,
             triOverlapX = triOX,
             triOverlapY = triOY
         )
     }
-
-
-    private fun gapPxForShape(): Int {
-        return when (currentShape) {
-            KeyShape.TRIANGLE -> 0
-            else -> dp(KEY_GAP_DP)
-        }
-    }
-
-
-
-
-
-
-
 
     /* ───────── REDRAW ───────── */
     private fun redrawKeyboard() {
@@ -265,17 +255,18 @@ class MyKeyboardService : InputMethodService() {
 
             val availW = availableKeyboardWidthPx()
 
+            // space keys coloring order (Space1, Space2...)
+            var spaceIndex = 0
+
             fun buildRow(keys: List<KeyConfig>, rowIndex: Int) {
                 val sizing = computeRowSizing(keys.size, availW)
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-
                     val vPad = when (currentShape) {
                         KeyShape.TRIANGLE -> dp(1)
                         else -> (sizing.keyH * 0.05f).toInt().coerceIn(dp(1), dp(8))
                     }
-
                     setPadding(sizing.outerPadPx, vPad, sizing.outerPadPx, vPad)
                     clipToPadding = false
                 }
@@ -283,15 +274,25 @@ class MyKeyboardService : InputMethodService() {
                 keys.forEachIndexed { i, key ->
                     val kv = createKey(key)
 
+                    // TRI flip
                     if (currentShape == KeyShape.TRIANGLE) {
                         kv.triangleFlipped = (i % 2 == 1)
+                    }
+
+                    // SPACE colors (per-key)
+                    if (kv.text.toString() == " ") {
+                        val linked = KeyboardPrefs.isSpaceLinked(this)
+                        val c1 = KeyboardPrefs.getSpace1Bg(this)
+                        val c2 = if (linked) c1 else KeyboardPrefs.getSpace2Bg(this)
+                        kv.customBgColor = if (spaceIndex == 0) c1 else c2
+                        spaceIndex++
                     }
 
                     val lp = LinearLayout.LayoutParams(sizing.keyW, sizing.keyH)
 
                     if (i > 0) {
                         lp.leftMargin = when (currentShape) {
-                            // ✅ gap=0 pa dodajemo negativni overlap da se “zbiju”
+                            // gap=0, pa negativno “preklopi” da budu bliže
                             KeyShape.TRIANGLE -> (sizing.gapPx - sizing.triOverlapX)
                             else -> sizing.gapPx
                         }
@@ -316,8 +317,6 @@ class MyKeyboardService : InputMethodService() {
                 keyboardContainer.addView(row, lpRow)
             }
 
-
-
             // special left
             if (currentKeyboardConfig.specialLeft.isNotEmpty()) {
                 buildRow(currentKeyboardConfig.specialLeft, 0)
@@ -336,15 +335,12 @@ class MyKeyboardService : InputMethodService() {
                 buildRow(currentKeyboardConfig.specialRight, rowIndex)
             }
 
-            // overlay edge icons AFTER layout settles
             drawEdgeIcons()
-
             isDrawing = false
         }
     }
 
     private fun clearEdgeOverlays() {
-        // makni sve views s tagom edge_icon
         val toRemove = mutableListOf<View>()
         for (i in 0 until overlayLayer.childCount) {
             val v = overlayLayer.getChildAt(i)
@@ -356,9 +352,7 @@ class MyKeyboardService : InputMethodService() {
     /**
      * SHIFT/BKSP overlay:
      * - nema utjecaja na layout tipki
-     * - ikona 40% keyHeight
-     * - tap-area veća (frame)
-     * - pozicija = centar u paddingu reda (gap), clamp da se ne reže
+     * - podignuto za nav bar (lastBottomInsetPx)
      */
     private fun drawEdgeIcons() {
         overlayLayer.post {
@@ -390,7 +384,6 @@ class MyKeyboardService : InputMethodService() {
 
                 val rowView = keyboardContainer.getChildAt(childIndex)
 
-                // paddingLeft/paddingRight su "gap" gdje želimo ikonu
                 val gapL = rowView.paddingLeft
                 val gapR = rowView.paddingRight
 
@@ -415,12 +408,10 @@ class MyKeyboardService : InputMethodService() {
                 }
                 box.addView(icon)
 
-                // vertikalno: centar u rowView
-// ✅ vertikalno: centar u rowView (float, stabilnije od top/height int)
+                // vertical center in row, lifted by nav bar inset
                 val rowCenterY = rowView.y + rowView.height / 2f
-                val top = (rowCenterY - iconBoxH / 2f).toInt()
+                val top = (rowCenterY - iconBoxH / 2f).toInt() - lastBottomInsetPx
 
-                // horizontalno: centar unutar lijevog/desnog gap-a
                 val leftInParent = if (pos.side == EdgePos.Side.LEFT) {
                     rowView.left + ((gapL - tapW) / 2).coerceAtLeast(0)
                 } else {
@@ -466,12 +457,20 @@ class MyKeyboardService : InputMethodService() {
 
         text = label
         isAllCaps = false
+
+        shape = currentShape
+        isSpecial = (label == "↵" || label == "⌫")
+
+        // default text color
         setTextColor(0xFFFFFFFF.toInt())
         textSize = if (isPortrait()) 18f else 16f
         gravity = Gravity.CENTER
 
-        shape = currentShape
-        isSpecial = (label == "↵" || label == "⌫")
+        // ENTER custom colors
+        if (label == "↵") {
+            customBgColor = KeyboardPrefs.getEnterBg(context)
+            setTextColor(KeyboardPrefs.getEnterIcon(context))
+        }
 
         setOnTouchListener { v, e -> handleTouch(v as TextView, e) }
 

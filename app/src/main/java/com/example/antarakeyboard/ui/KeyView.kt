@@ -26,6 +26,9 @@ class KeyView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+    var customBgColor: Int? = null
+        set(value) { field = value; invalidate() }
+
 
     /**
      * Samo za TRIANGLE:
@@ -86,11 +89,12 @@ class KeyView @JvmOverloads constructor(
         val pressed = isPressed
 
         // Boje (tamna baza + plava special)
-        val bg = when {
+        val bg = customBgColor ?: when {
             isSpecial -> if (pressed) 0xFF2A55FF.toInt() else 0xFF2E55E7.toInt()
             pressed -> 0xFF585858.toInt()
             else -> 0xFF3E3E3E.toInt()
         }
+
         val brd = 0xFF0F0F0F.toInt()
 
         fill.color = bg
