@@ -7,6 +7,8 @@ import android.graphics.Path
 import android.util.AttributeSet
 import android.view.Gravity
 import androidx.appcompat.widget.AppCompatTextView
+import androidx.core.content.ContextCompat
+import com.example.antarakeyboard.R
 import com.example.antarakeyboard.model.KeyShape
 import kotlin.math.min
 
@@ -16,45 +18,24 @@ class KeyView @JvmOverloads constructor(
 ) : AppCompatTextView(ctx, attrs) {
 
     var shape: KeyShape = KeyShape.HEX
-        set(value) {
-            field = value
-            invalidate()
-        }
+        set(value) { field = value; invalidate() }
 
     var isSpecial: Boolean = false
-        set(value) {
-            field = value
-            invalidate()
-        }
+        set(value) { field = value; invalidate() }
+
     var customBgColor: Int? = null
         set(value) { field = value; invalidate() }
 
-
-    /**
-     * Samo za TRIANGLE:
-     * false = normalan trokut (vrh gore)
-     * true  = obrnuti trokut (vrh dolje)
-     */
     var triangleFlipped: Boolean = false
-        set(value) {
-            field = value
-            invalidate()
-        }
+        set(value) { field = value; invalidate() }
 
-    /** Ako želiš da key uvijek bude savršen kvadrat (preporučeno za hex) */
     var forceSquare: Boolean = true
-        set(value) {
-            field = value
-            requestLayout()
-        }
+        set(value) { field = value; requestLayout() }
 
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
-
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dpF(1.25f) // malo tanji rub, “zategnutije”
+        strokeWidth = dpF(1.25f)
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
@@ -65,15 +46,12 @@ class KeyView @JvmOverloads constructor(
         gravity = Gravity.CENTER
         includeFontPadding = false
         setPadding(0, 0, 0, 0)
-
-        // Sitni trik: tekst ostane čitljiv i centriran
         isAllCaps = false
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (!forceSquare) return
-
         val s = min(measuredWidth, measuredHeight)
         setMeasuredDimension(s, s)
     }
@@ -88,21 +66,25 @@ class KeyView @JvmOverloads constructor(
 
         val pressed = isPressed
 
-        // Boje (tamna baza + plava special)
+        // ✅ Theme boje iz resources (light/dark automatski)
+        val keyFill = ContextCompat.getColor(context, R.color.key_fill)
+        val keyFillPressed = ContextCompat.getColor(context, R.color.key_fill_pressed)
+        val keyStroke = ContextCompat.getColor(context, R.color.key_stroke)
+
+        val specialFill = ContextCompat.getColor(context, R.color.special_fill)
+        val specialFillPressed = ContextCompat.getColor(context, R.color.special_fill_pressed)
+
+        // bg: custom override > special > normal
         val bg = customBgColor ?: when {
-            isSpecial -> if (pressed) 0xFF2A55FF.toInt() else 0xFF2E55E7.toInt()
-            pressed -> 0xFF585858.toInt()
-            else -> 0xFF3E3E3E.toInt()
+            isSpecial -> if (pressed) specialFillPressed else specialFill
+            pressed -> keyFillPressed
+            else -> keyFill
         }
 
-        val brd = 0xFF0F0F0F.toInt()
-
         fill.color = bg
-        stroke.color = brd
+        stroke.color = keyStroke
 
-        // Inset da stroke ne bude odrezan + minimalan “air”
         val inset = stroke.strokeWidth * 0.5f + dpF(0.75f)
-
         val l = inset
         val t = inset
         val r = w - inset
@@ -127,17 +109,13 @@ class KeyView @JvmOverloads constructor(
         super.onDraw(canvas)
     }
 
-    /** Pointy-top hex koji ispuni kvadrat maksimalno (kao na slici) */
     private fun buildHex(p: Path, l: Float, t: Float, r: Float, b: Float) {
         val w = r - l
         val h = b - t
         val cx = l + w * 0.5f
         val cy = t + h * 0.5f
 
-        // radius prema manjoj dimenziji, ali mrvicu “podebljan” (manje praznine)
         val radius = min(w, h) * 0.52f
-
-        // 0.866 = sqrt(3)/2
         val dx = 0.8660254f * radius
         val dy = 0.5f * radius
 
@@ -151,28 +129,22 @@ class KeyView @JvmOverloads constructor(
     }
 
     private fun buildTriangle(p: Path, l: Float, t: Float, r: Float, b: Float, flipped: Boolean) {
-        // ✅ bez insett-a da trokut bude maksimalan
         val left = l
         val top = t
         val right = r
         val bottom = b
 
         if (!flipped) {
-            // vrh gore
             p.moveTo(left + (right - left) * 0.5f, top)
             p.lineTo(left, bottom)
             p.lineTo(right, bottom)
         } else {
-            // vrh dolje
             p.moveTo(left, top)
             p.lineTo(right, top)
             p.lineTo(left + (right - left) * 0.5f, bottom)
         }
         p.close()
     }
-
-
-
 
     private fun buildCircle(p: Path, l: Float, t: Float, r: Float, b: Float) {
         p.addOval(l, t, r, b, Path.Direction.CW)

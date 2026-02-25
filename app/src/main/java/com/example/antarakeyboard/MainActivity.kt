@@ -104,8 +104,7 @@ class MainActivity : AppCompatActivity() {
         bindLPButton = findViewById(R.id.bindLPButton)
         resetLayoutButton = findViewById(R.id.resetLayoutButton)
 
-        // Edge controls (shift/bksp)
-        addEdgeKeyControls()
+
 
         // Shape init
         val savedShape = KeyboardPrefs.getShape(this)
@@ -506,62 +505,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /* =========================
-       EDGE KEYS UI (SHIFT / BKSP)
-       ========================= */
-
-    private fun addEdgeKeyControls() {
-        val root = findViewById<ViewGroup>(android.R.id.content)
-
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(14))
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { gravity = Gravity.BOTTOM }
-        }
-
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-
-        setShiftPosButton = Button(this).apply {
-            text = "Set SHIFT position"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = dp(6)
-            }
-            setOnClickListener { showEdgeKeyDialog(isShift = true) }
-        }
-
-        setBkspPosButton = Button(this).apply {
-            text = "Set BACKSPACE position"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(6)
-            }
-            setOnClickListener { showEdgeKeyDialog(isShift = false) }
-        }
-
-        row1.addView(setShiftPosButton)
-        row1.addView(setBkspPosButton)
-
-        shiftPosLabel = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(0, dp(6), 0, 0)
-        }
-
-        bkspPosLabel = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(0, dp(2), 0, 0)
-        }
-
-        panel.addView(row1)
-        panel.addView(shiftPosLabel)
-        panel.addView(bkspPosLabel)
-
-        root.addView(panel)
-        updateEdgeLabels()
-    }
 
     private fun updateEdgeLabels() {
         val s = EdgeKeyPrefs.getShift(this)

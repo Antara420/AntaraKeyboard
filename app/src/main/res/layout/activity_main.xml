@@ -1,144 +1,236 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mainScroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">>
+    android:fillViewport="true">
 
-    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
+    <LinearLayout
+        android:id="@+id/mainRoot"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- TITLE -->
+        <!-- NASLOV -->
         <TextView
-            android:id="@+id/titleText"
+            android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Antara Keyboard"
-            android:textSize="24sp"
+            android:textSize="28sp"
             android:textStyle="bold"
-            android:gravity="center_horizontal"
-            android:layout_marginBottom="12dp"
-            android:layout_marginTop="15dp" />
+            android:gravity="center"
+            android:paddingBottom="12dp"
+            android:paddingTop="12dp"/>
 
-
-        <!-- 1) Enable keyboard -->
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnEnableKeyboard"
+        <!-- Enable + Choose (jedan red) -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Enable Antara Keyboard"
-            app:textAllCaps="false" />
+            android:orientation="horizontal">
 
-        <!-- 2) Choose default keyboard -->
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnChooseKeyboard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Choose default keyboard"
-            android:layout_marginTop="8dp"
-            app:textAllCaps="false" />
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnEnableKeyboard"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Enable"
+                app:textAllCaps="false" />
 
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnChooseKeyboard"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Choose"
+                app:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Set Layout (full width ili po želji) -->
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnSetLayout"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
             android:text="Set Layout"
-            android:layout_marginTop="12dp"
             app:textAllCaps="false" />
 
-
+        <!-- Keyboard size -->
         <TextView
-            android:layout_marginTop="16dp"
-            android:text="Keyboard size"
-            android:textSize="18sp"
+            android:layout_marginTop="18dp"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:text="Keyboard size"
+            android:textSize="18sp" />
 
         <SeekBar
             android:id="@+id/sizeSeek"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
+        <!-- Key shape -->
         <TextView
-            android:text="Key shape"
-            android:textSize="18sp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="18dp"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:text="Key shape"
+            android:textSize="18sp" />
 
         <RadioGroup
             android:id="@+id/shapeGroup"
-            android:orientation="horizontal"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
 
             <RadioButton
                 android:id="@+id/hexBtn"
-                android:text="Hexagon"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"
+                android:text="Hexagon" />
 
             <RadioButton
                 android:id="@+id/triBtn"
-                android:text="Triangle"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"
+                android:text="Triangle" />
 
             <RadioButton
                 android:id="@+id/circleBtn"
-                android:text="Circle"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"
+                android:text="Circle" />
 
             <RadioButton
                 android:id="@+id/cubeBtn"
-                android:text="Cube"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"
+                android:text="Cube" />
         </RadioGroup>
 
         <com.example.antarakeyboard.ui.ShapePreviewView
             android:id="@+id/preview"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:layout_marginTop="16dp" />
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_marginTop="12dp" />
 
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/bindLPButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Bind LongPress"
-            app:textAllCaps="false" />
-
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/resetLayoutButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Reset Layout"
-            android:layout_marginTop="12dp"
-            app:textAllCaps="false" />
-
-        <!-- NEW: Colors -->
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnSpaceColor"
+        <!-- Bind + Reset (jedan red) -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Space color"
             android:layout_marginTop="14dp"
-            app:textAllCaps="false" />
+            android:orientation="horizontal">
 
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnEnterColor"
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/bindLPButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Bind LongPress"
+                app:textAllCaps="false" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/resetLayoutButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Reset Layout"
+                app:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Space + Enter color (jedan red) -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Enter color"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSpaceColor"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Space color"
+                app:textAllCaps="false" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnEnterColor"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Enter color"
+                app:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Edge keys (NE overlay) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Edge keys"
+            android:textSize="18sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            app:textAllCaps="false" />
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnShiftPos"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Set SHIFT position"
+                app:textAllCaps="false" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnBkspPos"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Set BACKSPACE position"
+                app:textAllCaps="false" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/shiftPosLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="SHIFT: -" />
+
+        <TextView
+            android:id="@+id/bkspPosLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="BKSP: -" />
+
+        <!-- malo prostora na dnu -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="24dp" />
 
     </LinearLayout>
-
 </ScrollView>
