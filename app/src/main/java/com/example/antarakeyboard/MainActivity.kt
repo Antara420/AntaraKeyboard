@@ -21,45 +21,78 @@ import com.example.antarakeyboard.model.addLongPress
 import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.ShapePreviewView
 import kotlin.math.roundToInt
+import androidx.appcompat.app.AppCompatDelegate
+import com.example.antarakeyboard.data.EdgeSlotsStorage
+import com.example.antarakeyboard.model.EdgeActionType
+import com.example.antarakeyboard.model.EdgeSlot
+import com.example.antarakeyboard.SpecialChars
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var preview: ShapePreviewView
-
     private lateinit var hex: RadioButton
     private lateinit var tri: RadioButton
     private lateinit var circle: RadioButton
     private lateinit var cube: RadioButton
-
     private lateinit var seek: SeekBar
     private lateinit var bindLPButton: Button
     private lateinit var resetLayoutButton: Button
-
     // --- Edge key UI ---
-    private lateinit var setShiftPosButton: Button
-    private lateinit var setBkspPosButton: Button
-    private lateinit var shiftPosLabel: TextView
-    private lateinit var bkspPosLabel: TextView
 
     // --- key height preview dialog state ---
     private var sizePreviewDialog: Dialog? = null
     private var previewKeyboardContainer: LinearLayout? = null
     private var okBtn: Button? = null
     private var cancelBtn: Button? = null
-
     private var previewBuilt = false
-
     private var savedKeyHeightPx = 0
     private var pendingKeyHeightPx = 0
-
     // range u dp
     private val minKeyDp = 36
     private val maxKeyDp = 90
     private val defaultKeyDp = 52
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val prefs = getSharedPreferences("theme_prefs", MODE_PRIVATE)
+        val isDark = prefs.getBoolean("dark_mode", true)
+
+        if (isDark) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+        } else {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+        }
+
+        // 🔥 OVO MORA BITI PRIJE findViewById
         setContentView(R.layout.activity_main)
+
+        // 🔥 SAD je sigurno
+        val themeBtn: Button = findViewById(R.id.btnThemeToggle)
+
+        fun applyThemeButtonText(isDark: Boolean) {
+            themeBtn.text = if (isDark) "Switch to Lightmode" else "Switch to Darkmode"
+        }
+
+        applyThemeButtonText(isDark)
+        val btnSetSideButtons: Button = findViewById(R.id.btnSetSideButtons)
+
+        btnSetSideButtons.setOnClickListener {
+            showEdgeSlotsDialog()
+        }
+
+        themeBtn.setOnClickListener {
+            val prefs2 = getSharedPreferences("theme_prefs", MODE_PRIVATE)
+            val current = prefs2.getBoolean("dark_mode", true)
+            val newMode = !current
+
+            prefs2.edit().putBoolean("dark_mode", newMode).apply()
+
+            AppCompatDelegate.setDefaultNightMode(
+                if (newMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+            )
+
+            applyThemeButtonText(newMode)
+        }
+
 
         val btnEnableKeyboard: Button = findViewById(R.id.btnEnableKeyboard)
         val btnChooseKeyboard: Button = findViewById(R.id.btnChooseKeyboard)
@@ -132,13 +165,18 @@ class MainActivity : AppCompatActivity() {
             KeyboardPrefs.setShape(this, KeyShape.HEX)
             KeyboardPrefs.clearKeyHeightPx(this)
 
-            // reset colors
-            KeyboardPrefs.setSpaceColors(this, 0xFF3E3E3E.toInt(), 0xFF3E3E3E.toInt(), true)
-            KeyboardPrefs.setEnterColors(this, 0xFF2E55E7.toInt(), 0xFFFFFFFF.toInt())
+            // ✅ reset colors iz resursa (light/dark automatski)
+            val keyFill = getColor(R.color.key_fill)
+            val specialFill = getColor(R.color.special_fill)
+            val specialText = getColor(R.color.special_text)
 
-            EdgeKeyPrefs.setShift(this, EdgePos(3, EdgePos.Side.LEFT))
-            EdgeKeyPrefs.setBackspace(this, EdgePos(3, EdgePos.Side.RIGHT))
-            updateEdgeLabels()
+            // Space: koristi key_fill (ili key_bg ako ti je to fill)
+            KeyboardPrefs.setSpaceColors(this, keyFill, keyFill, true)
+
+            // Enter: special fill + special text
+            KeyboardPrefs.setEnterColors(this, specialFill, specialText)
+
+            EdgeSlotsStorage.reset(this)
 
             setupKeyHeightSlider()
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
@@ -146,7 +184,267 @@ class MainActivity : AppCompatActivity() {
 
         setupKeyHeightSlider()
     }
+    private fun showEdgeSlotsDialog() {
 
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(12))
+        }
+
+        val grid = GridLayout(this).apply {
+            rowCount = 3
+            columnCount = 2
+        }
+
+        val slots = EdgeSlotsStorage.load(this).toMutableList()
+
+        fun buildGrid() {
+            grid.removeAllViews()
+
+            slots.forEachIndexed { index, slot ->
+
+                val btn = Button(this).apply {
+                    text = slot.label
+                    isAllCaps = false
+                    setPadding(dp(8), dp(12), dp(8), dp(12))
+                }
+
+                btn.setOnClickListener {
+                    showEdgeTypePicker(slot) { newSlot ->
+                        val normalized = normalizeSlot(newSlot)
+                        enforceNoDuplicates(slots, index, normalized)
+                        slots[index] = normalized
+                        buildGrid()
+                    }
+                }
+
+                btn.setOnLongClickListener {
+                    Toast.makeText(this, "Drag & drop coming next 😄", Toast.LENGTH_SHORT).show()
+                    true
+                }
+
+                val lp = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    columnSpec = GridLayout.spec(index % 2, 1f)
+                    rowSpec = GridLayout.spec(index / 2)
+                    setMargins(dp(6), dp(6), dp(6), dp(6))
+                }
+
+                grid.addView(btn, lp)
+            }
+        }
+
+        buildGrid()
+
+        root.addView(grid)
+
+        val saveBtn = Button(this).apply {
+            text = "Save"
+            setOnClickListener {
+                EdgeSlotsStorage.save(this@MainActivity, slots)
+                Toast.makeText(this@MainActivity, "Side buttons saved", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+        }
+
+        root.addView(saveBtn)
+
+        dialog.setContentView(root)
+        dialog.show()
+    }
+
+    private fun showEdgeActionPicker(
+        slots: MutableList<EdgeSlot>,
+        index: Int,
+        onUpdated: () -> Unit
+    ) {
+        val oldSlot = slots[index]
+
+        // Uključi i NONE da možeš maknut akciju
+        val types = EdgeActionType.values().toList()
+        val labels = types.map { it.name }
+
+        AlertDialog.Builder(this)
+            .setTitle("Select action")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val pickedType = types[which]
+
+                if (pickedType == EdgeActionType.CHAR) {
+                    // CHAR -> otvori meni special charova
+                    showSpecialCharPicker { ch ->
+                        val newSlot = oldSlot.copy(type = EdgeActionType.CHAR, value = ch)
+                        applyNoDuplicates(slots, index, newSlot)
+                        onUpdated()
+                    }
+                } else {
+                    val newSlot = oldSlot.copy(type = pickedType, value = null)
+                    applyNoDuplicates(slots, index, newSlot)
+                    onUpdated()
+                }
+            }
+            .show()
+    }
+    private fun normalizeSlot(s: EdgeSlot): EdgeSlot {
+        return when (s.type) {
+            EdgeActionType.CHAR -> s.copy(value = s.value?.takeIf { it.isNotBlank() })
+            else -> s.copy(value = null)
+        }
+    }
+
+    private fun enforceNoDuplicates(slots: MutableList<EdgeSlot>, changedIndex: Int, chosen: EdgeSlot) {
+        // jedinstvene akcije (smiju postojati samo jednom)
+        val uniqueTypes = setOf(
+            EdgeActionType.SHIFT,
+            EdgeActionType.BACKSPACE,
+            EdgeActionType.ENTER,
+            EdgeActionType.SPACE
+        )
+
+        // ako je SHIFT/BKSP/ENTER/SPACE odabran, makni ga sa starog mjesta
+        if (chosen.type in uniqueTypes) {
+            for (i in slots.indices) {
+                if (i != changedIndex && slots[i].type == chosen.type) {
+                    slots[i] = slots[i].copy(type = EdgeActionType.NONE, value = null)
+                }
+            }
+        }
+
+        // ako je CHAR, ne smije se ponavljati isti znak
+        if (chosen.type == EdgeActionType.CHAR && !chosen.value.isNullOrBlank()) {
+            for (i in slots.indices) {
+                if (i != changedIndex &&
+                    slots[i].type == EdgeActionType.CHAR &&
+                    slots[i].value == chosen.value
+                ) {
+                    slots[i] = slots[i].copy(type = EdgeActionType.NONE, value = null)
+                }
+            }
+        }
+    }
+    private fun showSpecialCharPicker(onPicked: (String) -> Unit) {
+        // ✅ ovo je jedino mjesto gdje vučeš znakove
+        // Ako ti se polje/lista ne zove ALL, promijeni u stvarno ime iz SpecialChars fajla.
+        val all = SpecialChars.ALL
+
+        AlertDialog.Builder(this)
+            .setTitle("Pick a character")
+            .setItems(all.toTypedArray()) { _, which ->
+                onPicked(all[which])
+            }
+            .show()
+    }
+
+    /**
+     * Pravilo:
+     * - ne smije se ponavljati nijedan action (SHIFT/BACKSPACE/ENTER/SPACE) -> premjesti na novo mjesto
+     * - ne smije se ponavljati ni CHAR + isti value -> premjesti na novo mjesto
+     */
+    private fun applyNoDuplicates(slots: MutableList<EdgeSlot>, targetIndex: Int, newSlot: EdgeSlot) {
+        // prvo postavi novi slot
+        slots[targetIndex] = newSlot
+
+        if (newSlot.type == EdgeActionType.NONE) return
+
+        for (i in slots.indices) {
+            if (i == targetIndex) continue
+
+            val s = slots[i]
+
+            val sameType = s.type == newSlot.type && newSlot.type != EdgeActionType.CHAR
+            val sameChar = (newSlot.type == EdgeActionType.CHAR
+                    && s.type == EdgeActionType.CHAR
+                    && !newSlot.value.isNullOrBlank()
+                    && s.value == newSlot.value)
+
+            if (sameType || sameChar) {
+                // makni duplikat (prebaci na novo mjesto)
+                slots[i] = s.copy(type = EdgeActionType.NONE, value = null)
+            }
+        }
+    }
+    private fun showEdgeTypePicker(
+        oldSlot: EdgeSlot,
+        onSelected: (EdgeSlot) -> Unit
+    ) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+
+        // --- akcije gore ---
+        val actions = listOf(
+            EdgeActionType.SHIFT to "⇧ Shift",
+            EdgeActionType.BACKSPACE to "⌫ Backspace",
+            EdgeActionType.ENTER to "↵ Enter",
+            EdgeActionType.SPACE to "␣ Space",
+            EdgeActionType.NONE to "None"
+        )
+
+        val actionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        actions.forEach { (type, label) ->
+            val b = Button(this).apply {
+                text = label
+                isAllCaps = false
+            }
+            b.setOnClickListener {
+                onSelected(oldSlot.copy(type = type, value = null))
+            }
+            actionsRow.addView(b)
+        }
+
+        root.addView(actionsRow)
+
+        // --- separator ---
+        root.addView(TextView(this).apply {
+            text = "Special chars"
+            setPadding(0, dp(10), 0, dp(6))
+        })
+
+        // --- grid special chars ---
+        val scroll = ScrollView(this)
+        val grid = GridLayout(this).apply {
+            columnCount = 6
+        }
+
+        SpecialChars.ALL.forEach { ch ->
+            val b = Button(this).apply {
+                text = ch
+                isAllCaps = false
+                minHeight = dp(44)
+                minWidth = dp(44)
+                setPadding(0, 0, 0, 0)
+            }
+            b.setOnClickListener {
+                onSelected(oldSlot.copy(type = EdgeActionType.CHAR, value = ch))
+            }
+
+            val lp = GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            }
+            grid.addView(b, lp)
+        }
+
+        scroll.addView(grid)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(320) // možeš povećat/smanjit
+        ))
+
+        AlertDialog.Builder(this)
+            .setTitle("Choose side button")
+            .setView(root)
+            .setNegativeButton("Close", null)
+            .show()
+    }
     /* =========================
        SPACE / ENTER COLOR DIALOGS
        ========================= */
@@ -505,63 +803,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
-    private fun updateEdgeLabels() {
-        val s = EdgeKeyPrefs.getShift(this)
-        val b = EdgeKeyPrefs.getBackspace(this)
-        shiftPosLabel.text = "SHIFT: Row ${s.row} ${s.side.name}"
-        bkspPosLabel.text = "BKSP:  Row ${b.row} ${b.side.name}"
-    }
-
-    private fun showEdgeKeyDialog(isShift: Boolean) {
-        val rows = listOf(1, 3, 5)
-        val sides = listOf("LEFT", "RIGHT")
-
-        val currentShift = EdgeKeyPrefs.getShift(this)
-        val currentBksp = EdgeKeyPrefs.getBackspace(this)
-        val current = if (isShift) currentShift else currentBksp
-        val other = if (isShift) currentBksp else currentShift
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
-        }
-
-        val rowSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, rows)
-            setSelection(rows.indexOf(current.row).coerceAtLeast(0))
-        }
-
-        val sideSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, sides)
-            setSelection(sides.indexOf(current.side.name).coerceAtLeast(0))
-        }
-
-        container.addView(TextView(this).apply { text = "Row (1, 3, 5)" })
-        container.addView(rowSpinner)
-        container.addView(TextView(this).apply { text = "Side (LEFT / RIGHT)" })
-        container.addView(sideSpinner)
-
-        AlertDialog.Builder(this)
-            .setTitle(if (isShift) "Set SHIFT position" else "Set BACKSPACE position")
-            .setView(container)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Save") { _, _ ->
-                val row = rows[rowSpinner.selectedItemPosition]
-                val side = EdgePos.Side.valueOf(sides[sideSpinner.selectedItemPosition])
-                val newPos = EdgePos(row, side)
-
-                if (newPos.row == other.row && newPos.side == other.side) {
-                    Toast.makeText(this, "SHIFT i BACKSPACE ne mogu biti na istom mjestu.", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-
-                if (isShift) EdgeKeyPrefs.setShift(this, newPos) else EdgeKeyPrefs.setBackspace(this, newPos)
-                updateEdgeLabels()
-                Toast.makeText(this, "Saved.", Toast.LENGTH_SHORT).show()
-            }
-            .show()
-    }
 
     /* =========================
        SHAPE

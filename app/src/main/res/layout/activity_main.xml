@@ -53,14 +53,34 @@
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Set Layout (full width ili po želji) -->
-        <androidx.appcompat.widget.AppCompatButton
-            android:id="@+id/btnSetLayout"
-            android:layout_width="wrap_content"
+        <!-- Set Layout + Set side buttons (jedan red) -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="Set Layout"
-            app:textAllCaps="false" />
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSetLayout"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Set Layout"
+                app:textAllCaps="false" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnSetSideButtons"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:text="Set side buttons"
+                app:textAllCaps="false" />
+        </LinearLayout>
 
         <!-- Keyboard size -->
         <TextView
@@ -178,59 +198,14 @@
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Edge keys (NE overlay) -->
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Light / Dark mode -->
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnThemeToggle"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Edge keys"
-            android:textSize="18sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnShiftPos"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="4"
-                android:text="Set SHIFT position"
-                app:textAllCaps="false" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnBkspPos"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="4"
-                android:text="Set BACKSPACE position"
-                app:textAllCaps="false" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/shiftPosLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="SHIFT: -" />
-
-        <TextView
-            android:id="@+id/bkspPosLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="BKSP: -" />
-
-        <!-- malo prostora na dnu -->
-        <Space
-            android:layout_width="match_parent"
-            android:layout_height="24dp" />
+            android:text="Lightmode / Darkmode"
+            app:textAllCaps="false" />
 
     </LinearLayout>
 </ScrollView>

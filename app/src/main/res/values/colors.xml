@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Base -->
-    <color name="keyboard_bg">#FFFFFFFF</color>
 
     <color name="key_fill">#FFE6E6E6</color>
     <color name="key_fill_pressed">#FFD6D6D6</color>
     <color name="key_stroke">#FFB0B0B0</color>
 
-    <color name="key_text">#FF000000</color>
+    <color name="key_text">#111111</color>
+    <color name="key_bg">#EDEDED</color>
+    <color name="keyboard_bg">#F7F7F7</color>
 
     <!-- optional: enter/special -->
     <color name="special_fill">#FF2E55E7</color>
     <color name="special_fill_pressed">#FF2A55FF</color>
+
     <color name="special_text">#FFFFFFFF</color>
 </resources>

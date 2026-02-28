@@ -21,14 +21,21 @@ class KeyView @JvmOverloads constructor(
         set(value) { field = value; invalidate() }
 
     var isSpecial: Boolean = false
-        set(value) { field = value; invalidate() }
+        set(value) {
+            field = value
+            applyTextColor()   // ✅ special text color
+            invalidate()
+        }
 
+    /** Ako nije null, pregazi normal/special fill */
     var customBgColor: Int? = null
         set(value) { field = value; invalidate() }
 
+    /** Samo za TRIANGLE */
     var triangleFlipped: Boolean = false
         set(value) { field = value; invalidate() }
 
+    /** Ako želiš da key bude kvadrat (hex najbolje izgleda) */
     var forceSquare: Boolean = true
         set(value) { field = value; requestLayout() }
 
@@ -39,14 +46,37 @@ class KeyView @JvmOverloads constructor(
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
-
+    private fun applyThemeColors() {
+        fill.color = context.getColor(R.color.key_fill)
+        stroke.color = context.getColor(R.color.key_stroke)
+        // setTextColor makni, to radi applyTextColor()
+    }
     private val path = Path()
 
     init {
+        applyThemeColors()
         gravity = Gravity.CENTER
         includeFontPadding = false
         setPadding(0, 0, 0, 0)
         isAllCaps = false
+        applyTextColor()
+    }
+
+    /** Bitno: da pressed state odmah precrta fill */
+    override fun setPressed(pressed: Boolean) {
+        val changed = pressed != isPressed
+        super.setPressed(pressed)
+        if (changed) invalidate()
+    }
+
+    /** Ako se text promijeni (npr. enter ikona), boja ostane ok */
+    private fun applyTextColor() {
+        val c = if (isSpecial) {
+            ContextCompat.getColor(context, R.color.special_text)
+        } else {
+            ContextCompat.getColor(context, R.color.key_text)
+        }
+        setTextColor(c)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -66,7 +96,7 @@ class KeyView @JvmOverloads constructor(
 
         val pressed = isPressed
 
-        // ✅ Theme boje iz resources (light/dark automatski)
+        // ✅ theme colors (light/dark automatski)
         val keyFill = ContextCompat.getColor(context, R.color.key_fill)
         val keyFillPressed = ContextCompat.getColor(context, R.color.key_fill_pressed)
         val keyStroke = ContextCompat.getColor(context, R.color.key_stroke)
@@ -74,7 +104,6 @@ class KeyView @JvmOverloads constructor(
         val specialFill = ContextCompat.getColor(context, R.color.special_fill)
         val specialFillPressed = ContextCompat.getColor(context, R.color.special_fill_pressed)
 
-        // bg: custom override > special > normal
         val bg = customBgColor ?: when {
             isSpecial -> if (pressed) specialFillPressed else specialFill
             pressed -> keyFillPressed
@@ -84,6 +113,7 @@ class KeyView @JvmOverloads constructor(
         fill.color = bg
         stroke.color = keyStroke
 
+        // inset da stroke ne bude odrezan
         val inset = stroke.strokeWidth * 0.5f + dpF(0.75f)
         val l = inset
         val t = inset
@@ -109,6 +139,7 @@ class KeyView @JvmOverloads constructor(
         super.onDraw(canvas)
     }
 
+    /** Pointy-top hex koji ispuni kvadrat maksimalno */
     private fun buildHex(p: Path, l: Float, t: Float, r: Float, b: Float) {
         val w = r - l
         val h = b - t
@@ -116,7 +147,7 @@ class KeyView @JvmOverloads constructor(
         val cy = t + h * 0.5f
 
         val radius = min(w, h) * 0.52f
-        val dx = 0.8660254f * radius
+        val dx = 0.8660254f * radius // sqrt(3)/2
         val dy = 0.5f * radius
 
         p.moveTo(cx, cy - radius)
@@ -129,19 +160,16 @@ class KeyView @JvmOverloads constructor(
     }
 
     private fun buildTriangle(p: Path, l: Float, t: Float, r: Float, b: Float, flipped: Boolean) {
-        val left = l
-        val top = t
-        val right = r
-        val bottom = b
-
         if (!flipped) {
-            p.moveTo(left + (right - left) * 0.5f, top)
-            p.lineTo(left, bottom)
-            p.lineTo(right, bottom)
+            // vrh gore
+            p.moveTo(l + (r - l) * 0.5f, t)
+            p.lineTo(l, b)
+            p.lineTo(r, b)
         } else {
-            p.moveTo(left, top)
-            p.lineTo(right, top)
-            p.lineTo(left + (right - left) * 0.5f, bottom)
+            // vrh dolje
+            p.moveTo(l, t)
+            p.lineTo(r, t)
+            p.lineTo(l + (r - l) * 0.5f, b)
         }
         p.close()
     }

@@ -1,7 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.AntaraKeyboard" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+    <style name="Theme.AntaraKeyboard" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Night specifične override-e stavljaj kao <item>, ne <color> -->
+
+        <!-- Ako želiš, možeš mapirati theme atribute na tvoje boje (koje su u colors-night.xml): -->
+        <item name="colorSurface">@color/keyboard_bg</item>
+        <item name="colorOnSurface">@color/key_text</item>
+        <item name="colorPrimary">@color/special_fill</item>
+        <item name="colorOnPrimary">@color/special_text</item>
+
+        <!-- ostalo po potrebi -->
+        <!-- <item name="android:statusBarColor">@android:color/transparent</item> -->
     </style>
 </resources>

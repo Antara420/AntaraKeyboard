@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="60dp"
-    android:height="60dp"
-    android:viewportWidth="60"
-    android:viewportHeight="60">
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <path
-        android:fillColor="@color/key_fill"
-        android:strokeColor="@color/key_stroke"
-        android:strokeWidth="1"
-        android:pathData="M30,5 L50,15 L50,45 L30,55 Z" />
-</vector>
+    <item
+        android:state_pressed="true"
+        android:drawable="@drawable/hex_half_right_pressed"/>
+
+    <item
+        android:drawable="@drawable/hex_half_right_normal"/>
+
+</selector>

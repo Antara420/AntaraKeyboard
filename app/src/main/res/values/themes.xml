@@ -1,9 +1,17 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.AntaraKeyboard" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+
+    <style name="Theme.AntaraKeyboard" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorSurface">@color/keyboard_bg</item>
+        <item name="colorOnSurface">@color/key_text</item>
+        <item name="colorPrimary">@color/special_fill</item>
+        <item name="colorOnPrimary">@color/special_text</item>
     </style>
 
-    <style name="Theme.AntaraKeyboard" parent="Base.Theme.AntaraKeyboard" />
+    <style name="Theme.AntaraKeyboard.Light" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorSurface">@color/keyboard_bg</item>
+        <item name="colorOnSurface">@color/key_text</item>
+        <item name="colorPrimary">@color/special_fill</item>
+        <item name="colorOnPrimary">@color/special_text</item>
+    </style>
+
 </resources>

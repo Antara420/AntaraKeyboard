@@ -10,6 +10,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.antarakeyboard.R
 import com.example.antarakeyboard.model.KeyboardConfig
+import com.example.antarakeyboard.SpecialChars
+
 
 data class LongPressBind(val keyLabel: String, val charValue: String)
 
