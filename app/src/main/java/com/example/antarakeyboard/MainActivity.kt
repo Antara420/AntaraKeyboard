@@ -18,14 +18,17 @@ import com.example.antarakeyboard.data.KeyboardPrefs
 import com.example.antarakeyboard.model.KeyShape
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.addLongPress
-import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.ShapePreviewView
+import com.example.antarakeyboard.ui.LongPressKeyPickerDialog
 import kotlin.math.roundToInt
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.antarakeyboard.data.EdgeSlotsStorage
 import com.example.antarakeyboard.model.EdgeActionType
 import com.example.antarakeyboard.model.EdgeSlot
 import com.example.antarakeyboard.SpecialChars
+import android.content.ClipData
+import android.content.ClipDescription
+import android.view.DragEvent
 
 class MainActivity : AppCompatActivity() {
     private lateinit var preview: ShapePreviewView
@@ -148,15 +151,17 @@ class MainActivity : AppCompatActivity() {
         tri.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.TRIANGLE) }
         circle.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.CIRCLE) }
         cube.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.CUBE) }
-
-        // Bind long press
+        //longpress
         bindLPButton.setOnClickListener {
             val cfg = KeyboardPrefs.loadLayout(this)
-            BindLongPressDialog(this, cfg) { bind ->
-                cfg.addLongPress(bind.keyLabel, bind.charValue)
-                KeyboardPrefs.saveLayout(this, cfg)
-                Toast.makeText(this, "Bind saved: ${bind.keyLabel} → ${bind.charValue}", Toast.LENGTH_SHORT).show()
-            }.show()
+            LongPressKeyPickerDialog(
+                context = this,
+                cfg = cfg,
+                onSave = { updated ->
+                    KeyboardPrefs.saveLayout(this, updated)
+                    Toast.makeText(this, "Long press saved ✅", Toast.LENGTH_SHORT).show()
+                }
+            ).show()
         }
 
         // Reset
@@ -204,14 +209,31 @@ class MainActivity : AppCompatActivity() {
         fun buildGrid() {
             grid.removeAllViews()
 
-            slots.forEachIndexed { index, slot ->
+            fun startDragCompat(v: View, fromIndex: Int) {
+                val data = ClipData.newPlainText("fromIndex", fromIndex.toString())
+                val shadow = View.DragShadowBuilder(v)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    v.startDragAndDrop(data, shadow, null, 0)
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.startDrag(data, shadow, null, 0)
+                }
+            }
 
+            fun parseFromIndex(e: DragEvent): Int? {
+                val item = e.clipData?.getItemAt(0)?.text?.toString() ?: return null
+                return item.toIntOrNull()
+            }
+
+            slots.forEachIndexed { index, slot ->
                 val btn = Button(this).apply {
                     text = slot.label
                     isAllCaps = false
                     setPadding(dp(8), dp(12), dp(8), dp(12))
+                    tag = index
                 }
 
+                // klik -> picker (tvoj postojeći flow)
                 btn.setOnClickListener {
                     showEdgeTypePicker(slot) { newSlot ->
                         val normalized = normalizeSlot(newSlot)
@@ -221,9 +243,52 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                btn.setOnLongClickListener {
-                    Toast.makeText(this, "Drag & drop coming next 😄", Toast.LENGTH_SHORT).show()
+                // long press -> start drag
+                btn.setOnLongClickListener { v ->
+                    startDragCompat(v, index)
                     true
+                }
+
+                // drop target
+                btn.setOnDragListener { v, e ->
+                    when (e.action) {
+                        DragEvent.ACTION_DRAG_STARTED -> {
+                            // prihvati samo naš ClipData
+                            e.clipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true
+                        }
+
+                        DragEvent.ACTION_DRAG_ENTERED -> {
+                            v.alpha = 0.65f
+                            true
+                        }
+
+                        DragEvent.ACTION_DRAG_EXITED -> {
+                            v.alpha = 1f
+                            true
+                        }
+
+                        DragEvent.ACTION_DROP -> {
+                            v.alpha = 1f
+                            val from = parseFromIndex(e) ?: return@setOnDragListener true
+                            val to = (v.tag as? Int) ?: return@setOnDragListener true
+                            if (from == to) return@setOnDragListener true
+
+                            // SWAP
+                            val tmp = slots[from]
+                            slots[from] = slots[to]
+                            slots[to] = tmp
+
+                            buildGrid()
+                            true
+                        }
+
+                        DragEvent.ACTION_DRAG_ENDED -> {
+                            v.alpha = 1f
+                            true
+                        }
+
+                        else -> true
+                    }
                 }
 
                 val lp = GridLayout.LayoutParams().apply {

@@ -24,7 +24,6 @@ import com.example.antarakeyboard.data.KeyboardPrefs
 import com.example.antarakeyboard.model.KeyConfig
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
-import com.example.antarakeyboard.ui.BindLongPressDialog
 import com.example.antarakeyboard.ui.KeyView
 import com.example.antarakeyboard.ui.SpecialCharsDialog
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
@@ -35,6 +34,11 @@ import com.example.antarakeyboard.service.input.KeyInputController
 import com.example.antarakeyboard.data.EdgeSlotsStorage
 import com.example.antarakeyboard.model.EdgeActionType
 import com.example.antarakeyboard.model.EdgeSlot
+import android.view.ViewConfiguration
+import android.widget.Button
+import android.widget.GridLayout
+
+
 
 class MyKeyboardService : InputMethodService() {
     /* ───────── STATE ───────── */
@@ -56,6 +60,10 @@ class MyKeyboardService : InputMethodService() {
     private var lastIsDark: Boolean? = null
     private var targetKeyboardHeightPx: Int = 0
     lateinit var inputController: KeyInputController
+    private var longPressPopup: PopupWindow? = null
+    private var lpSelectedIndex: Int = 0
+    private var lpItems: List<KeyView> = emptyList()
+
     /* ───────── LIFECYCLE ───────── */
     override fun onCreateInputView(): View {
         val isDark = getSharedPreferences("theme_prefs", MODE_PRIVATE)
@@ -148,6 +156,12 @@ class MyKeyboardService : InputMethodService() {
         copy.specialRight.removeAll { it.label in activeEdgeLabels }
         return copy
     }
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        hideLongPressPopup()
+    }
+
+
     /* ───────── HELPERS ───────── */
     private fun isPortrait() = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -225,8 +239,8 @@ class MyKeyboardService : InputMethodService() {
         previewPopup = null
     }
     /* ───────── INPUT API for Controller ───────── */
-    fun showPreview(view: TextView) = showKeyPreview(view)
-    fun hidePreview() = hideKeyPreview()
+    fun showPreview(view: TextView) { /* disabled */ }
+    fun hidePreview() { /* disabled */ }
     fun toggleShift() {
         isShifted = !isShifted
         redrawKeyboard()
@@ -534,6 +548,52 @@ class MyKeyboardService : InputMethodService() {
             slots.forEach { addIcon(it) }
         }
     }
+    private fun showLongPressPopup(anchor: View, chars: List<String>) {
+        if (chars.isEmpty()) return
+
+        // zatvori stari popup
+        longPressPopup?.dismiss()
+        longPressPopup = null
+
+        val grid = GridLayout(this).apply {
+            columnCount = 6
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+
+        chars.forEach { ch ->
+            val b = Button(this).apply {
+                text = ch
+                textSize = 18f
+                isAllCaps = false
+                setOnClickListener {
+                    currentInputConnection?.commitText(ch, 1)
+                    longPressPopup?.dismiss()
+                    longPressPopup = null
+                }
+            }
+            grid.addView(b)
+        }
+
+        val pw = PopupWindow(
+            grid,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            isOutsideTouchable = true
+            elevation = dp(6).toFloat()
+            setOnDismissListener { longPressPopup = null }
+        }
+
+        // prikaži iznad tipke
+        pw.showAsDropDown(anchor, 0, -anchor.height - dp(8))
+        longPressPopup = pw
+    }
+
+    private fun hideLongPressPopup() {
+        longPressPopup?.dismiss()
+        longPressPopup = null
+    }
     /* ───────── KEY VIEW ───────── */
     private fun createKey(keyConfig: KeyConfig): KeyView = KeyView(this).apply {
         val label = keyConfig.label
@@ -544,33 +604,71 @@ class MyKeyboardService : InputMethodService() {
         setTextColor(getColor(R.color.key_text))
         textSize = if (isPortrait()) 18f else 16f
         gravity = Gravity.CENTER
+
         if (label == "↵") {
             customBgColor = KeyboardPrefs.getEnterBg(context)
             setTextColor(KeyboardPrefs.getEnterIcon(context))
         }
-        setOnTouchListener { v, e ->
-            inputController.handleTouch(v as TextView, e)
-        }
+
         val nonBindable = setOf("⇧", "⌫", "↵", "123", "ABC", "abc", " ")
-        setOnLongClickListener {
-            if (label in nonBindable) return@setOnLongClickListener false
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+
+        var longPressTriggered = false
+
+        val longPressRunnable = Runnable {
+            if (label in nonBindable) return@Runnable
             val binds = keyConfig.longPressBindings
-            if (binds.isEmpty()) {
-                BindLongPressDialog(context, currentKeyboardConfig) { bind ->
-                    if (!keyConfig.longPressBindings.contains(bind.charValue)) {
-                        keyConfig.longPressBindings.add(bind.charValue)
-                    }
-                    KeyboardPrefs.saveLayout(context, currentKeyboardConfig)
-                    Toast.makeText(context, "Bind: $label → ${bind.charValue}", Toast.LENGTH_SHORT).show()
-                }.show()
-            } else {
-                SpecialCharsDialog(context, binds) { chosen ->
-                    currentInputConnection?.commitText(chosen, 1)
-                }.show()
+            if (binds.isNotEmpty()) {
+                longPressTriggered = true
+                // pokaži popup sa spremljenim znakovima
+                showLongPressPopup(this, binds)
             }
-            true
+        }
+
+        // 🔥 ne koristimo setOnLongClickListener + Dialog (to ti ruši)
+        isLongClickable = true
+
+        setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    longPressTriggered = false
+                    hideLongPressPopup()
+
+                    // start timer za long press
+                    mainHandler.removeCallbacks(longPressRunnable)
+                    mainHandler.postDelayed(longPressRunnable, longPressTimeout)
+
+                    // normalni behavior (pressed state, preview itd.)
+                    inputController.handleTouch(v as TextView, e)
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (!longPressTriggered) {
+                        inputController.handleTouch(v as TextView, e)
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
+
+                    if (longPressTriggered) {
+                        // long press je okinut -> NE smije se upisat normalno slovo
+                        v.isPressed = false
+                        true
+                    } else {
+                        // običan tap -> normalno ponašanje
+                        inputController.handleTouch(v as TextView, e)
+                        true
+                    }
+                }
+
+                else -> false
+            }
         }
     }
+
     /* ───────── INNER CLASSES ───────── */
     class CharSelectorAdapter(
         private val items: List<String>,
