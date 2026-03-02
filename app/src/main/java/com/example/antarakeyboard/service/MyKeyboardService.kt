@@ -60,49 +60,68 @@ class MyKeyboardService : InputMethodService() {
     private var lastIsDark: Boolean? = null
     private var targetKeyboardHeightPx: Int = 0
     lateinit var inputController: KeyInputController
+    private var lpRects: List<android.graphics.Rect> = emptyList()
+    // --- long press popup state ---
     private var longPressPopup: PopupWindow? = null
+    private var lpChars: List<String> = emptyList()
     private var lpSelectedIndex: Int = 0
-    private var lpItems: List<KeyView> = emptyList()
+    private var lpPreviewTv: TextView? = null
+    private var lpGrid: GridLayout? = null
+
 
     /* ───────── LIFECYCLE ───────── */
     override fun onCreateInputView(): View {
         val isDark = getSharedPreferences("theme_prefs", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
-        lastIsDark = isDark
+
         val themedCtx = android.view.ContextThemeWrapper(
             this,
             if (isDark) R.style.Theme_AntaraKeyboard else R.style.Theme_AntaraKeyboard_Light
         )
+        lastIsDark = isDark
+        // 1) inflate
         rootView = layoutInflater.cloneInContext(themedCtx).inflate(R.layout.keyboard_view, null)
+
+        // 2) findViewById ODMAH
         overlayLayer = rootView.findViewById(R.id.keyboardRoot)
         keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
-        // Container neka bude WRAP_CONTENT i dolje
+
+        overlayLayer.clipChildren = false
+        overlayLayer.clipToPadding = false
+        // 3) sad smiješ dirat overlay/keyboard
+
+        keyboardContainer.clipChildren = false
+        keyboardContainer.clipToPadding = false
+
         keyboardContainer.layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM
         )
+
         inputController = KeyInputController(this)
+
         val basePadL = overlayLayer.paddingLeft
         val basePadT = overlayLayer.paddingTop
         val basePadR = overlayLayer.paddingRight
         val basePadB = overlayLayer.paddingBottom
-        targetKeyboardHeightPx = computeTargetKeyboardHeight()
-        overlayLayer.post {
-            applyKeyboardHeight(targetKeyboardHeightPx + lastBottomInsetPx)
-        }
+
         ViewCompat.setOnApplyWindowInsetsListener(overlayLayer) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
             lastBottomInsetPx = bottomInset
             v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
-            targetKeyboardHeightPx = computeTargetKeyboardHeight()
-            applyKeyboardHeight(targetKeyboardHeightPx + bottomInset)
+
+
             insets
         }
+        targetKeyboardHeightPx = computeTargetKeyboardHeight()
+        overlayLayer.post { applyKeyboardHeight(targetKeyboardHeightPx + lastBottomInsetPx) }
+
         currentShape = KeyboardPrefs.getShape(this)
         currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
         alphabetLayout = currentKeyboardConfig
-        redrawKeyboard()
+
+        overlayLayer.post { redrawKeyboard() }
         return rootView
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -124,7 +143,32 @@ class MyKeyboardService : InputMethodService() {
         if (hasLetters) alphabetLayout = currentKeyboardConfig
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
         overlayLayer.post { applyKeyboardHeight(targetKeyboardHeightPx + lastBottomInsetPx) }
-        redrawKeyboard()
+        overlayLayer.post { redrawKeyboard() }
+    }
+    private fun syncOverlayHeightToContent() {
+        if (!::overlayLayer.isInitialized || !::keyboardContainer.isInitialized) return
+        val contentH = keyboardContainer.height
+        if (contentH <= 0) return
+
+        // koliko realno treba da stane sadržaj
+        val desired = contentH + overlayLayer.paddingTop + overlayLayer.paddingBottom
+
+        // tvoja "normalna" ciljna visina (ratio) + inset
+        val target = (targetKeyboardHeightPx + lastBottomInsetPx).coerceAtLeast(dp(230))
+
+        // ✅ clamp: ne dopusti da bude veće od targeta
+        val newH = desired.coerceIn(dp(230), target)
+
+        val lp = overlayLayer.layoutParams ?: ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, newH
+        )
+
+        if (lp.height != newH) {
+            lp.height = newH
+            overlayLayer.layoutParams = lp
+            overlayLayer.minimumHeight = newH
+            overlayLayer.requestLayout()
+        }
     }
     private fun recreateInputView() {
         currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
@@ -133,27 +177,44 @@ class MyKeyboardService : InputMethodService() {
     override fun onEvaluateFullscreenMode() = false
     override fun onCreateExtractTextView(): View? = null
     /* ───────── EDGE KEYS: remove from layout (overlay only) ───────── */
+    // ✅ KORAK 8: sigurniji applyEdgeKeys (ne briše “normalne” tipke po labelu)
     private fun applyEdgeKeys(cfg: KeyboardConfig): KeyboardConfig {
-
         val copy = cfg.copy(
             rows = cfg.rows.map { r -> r.copy(keys = r.keys.toMutableList()) }.toMutableList(),
             specialLeft = cfg.specialLeft.toMutableList(),
             specialRight = cfg.specialRight.toMutableList()
         )
-        // 🔥 uzmi sve aktivne edge slotove (osim NONE)
-        val activeEdgeLabels = EdgeSlotsStorage.load(this)
-            .filter { it.type != EdgeActionType.NONE }
-            .map { it.label }
-            .filter { it.isNotBlank() }
-            .toSet()
-        if (activeEdgeLabels.isEmpty()) return copy
-        // makni iz glavnih redova
-        copy.rows.forEach { row ->
-            row.keys.removeAll { it.label in activeEdgeLabels }
+
+        val slots = EdgeSlotsStorage.load(this).filter { it.type != EdgeActionType.NONE }
+        if (slots.isEmpty()) return copy
+
+        // Koje tipke MORAJU nestat iz normalnog layouta kad su na edgeu
+        val removeLabels = buildSet<String> {
+            slots.forEach { s ->
+                when (s.type) {
+                    EdgeActionType.SHIFT -> add("⇧")
+                    EdgeActionType.BACKSPACE -> add("⌫")
+                    EdgeActionType.ENTER -> add("↵")
+                    EdgeActionType.SPACE -> add(" ")
+                    EdgeActionType.CHAR -> {
+                        // za char edge: makni i label i value ako ih koristiš
+                        if (s.label.isNotBlank()) add(s.label)
+                        val v = s.value
+                        if (!v.isNullOrBlank()) add(v)
+                    }
+                    EdgeActionType.NONE -> Unit
+                }
+            }
         }
-        // makni iz specialLeft i specialRight
-        copy.specialLeft.removeAll { it.label in activeEdgeLabels }
-        copy.specialRight.removeAll { it.label in activeEdgeLabels }
+
+        fun strip(list: MutableList<KeyConfig>) {
+            list.removeAll { it.label in removeLabels }
+        }
+
+        copy.rows.forEach { strip(it.keys) }
+        strip(copy.specialLeft)
+        strip(copy.specialRight)
+
         return copy
     }
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -167,24 +228,20 @@ class MyKeyboardService : InputMethodService() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
     private fun computeTargetKeyboardHeight(): Int {
         val screenH = resources.displayMetrics.heightPixels
-        val ratio = if (isPortrait()) 0.31f else 0.24f
-        return (screenH * ratio).roundToInt().coerceAtLeast(dp(185))
+        val ratio = if (isPortrait()) 0.36f else 0.28f
+        return (screenH * ratio).roundToInt().coerceAtLeast(dp(230))
     }
+
     private fun applyKeyboardHeight(h: Int) {
-        val height = h.coerceAtLeast(dp(185))
-        val lp = overlayLayer.layoutParams
-        if (lp != null) {
-            if (lp.height != height) {
-                lp.height = height
-                overlayLayer.layoutParams = lp
-                overlayLayer.minimumHeight = height
-                overlayLayer.requestLayout()
-            }
-        } else {
-            overlayLayer.layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                height
-            )
+        val height = h.coerceAtLeast(dp(230))
+        val lp = overlayLayer.layoutParams ?: ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            height
+        )
+
+        if (lp.height != height) {
+            lp.height = height
+            overlayLayer.layoutParams = lp
             overlayLayer.minimumHeight = height
             overlayLayer.requestLayout()
         }
@@ -195,20 +252,26 @@ class MyKeyboardService : InputMethodService() {
         if (currentKeyboardConfig.specialRight.isNotEmpty()) rows += 1
         return rows.coerceAtLeast(1)
     }
+
     private fun keyHeight(): Int {
         val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f)
         val rows = totalVisibleRows()
-        val containerH = (overlayLayer.height.takeIf { it > 0 }
-            ?: (resources.displayMetrics.heightPixels * 0.33f).toInt())
+
+        val containerH = (targetKeyboardHeightPx + lastBottomInsetPx).takeIf { it > 0 }
+            ?: computeTargetKeyboardHeight()
+
         val usableH = (containerH - overlayLayer.paddingTop - overlayLayer.paddingBottom)
             .coerceAtLeast(dp(150))
+
         val denom = if (currentShape == KeyShape.HEX) {
             (rows - (rows - 1) * OVERLAP_RATIO).coerceAtLeast(1f)
         } else rows.toFloat()
+
         val usableForKeys = (usableH * 0.92f).toInt()
         val baseKeyH = (usableForKeys / denom).toInt()
         return ((baseKeyH * scale) * 0.98f).toInt().coerceIn(dp(36), dp(175))
     }
+
     private fun availableKeyboardWidthPx(): Int {
         val w = overlayLayer.width
         val base = if (w > 0) w else resources.displayMetrics.widthPixels
@@ -246,10 +309,28 @@ class MyKeyboardService : InputMethodService() {
         redrawKeyboard()
     }
     fun commitText(text: String) {
+
+        // ✅ layout switching
+        when (text) {
+            "123" -> {
+                // prebaci na numeric
+                currentKeyboardConfig = applyEdgeKeys(myDefaultNumericConfig)
+                redrawKeyboard()
+                return
+            }
+            "ABC", "abc" -> {
+                // vrati na alfabet (ako imaš spremljen)
+                currentKeyboardConfig = applyEdgeKeys(alphabetLayout ?: defaultKeyboardLayout)
+                redrawKeyboard()
+                return
+            }
+        }
+
         val out =
             if (text.length == 1 && text[0].isLetter()) {
                 if (isShifted) text.uppercase() else text.lowercase()
             } else text
+
         currentInputConnection?.commitText(out, 1)
     }
     /* ───────── LAYOUT MATH ───────── */
@@ -309,36 +390,67 @@ class MyKeyboardService : InputMethodService() {
     private fun drawEdgeSlots() {
         overlayLayer.post {
             clearEdgeSlots()
-            val visualRows = 3
-            val safeEdge = dp(2)
-            val totalHeight = overlayLayer.height
-            if (totalHeight <= 0) return@post
-            val slotHeight = totalHeight / visualRows
-            val slotWidth = (overlayLayer.width * 0.08f).toInt().coerceAtLeast(dp(18))
-            for (i in 0 until visualRows) {
-                val top = i * slotHeight
-                fun addSlot(tag: String, x: Int) {
+
+            if (keyboardContainer.childCount == 0) return@post
+            if (overlayLayer.width <= 0) {
+                overlayLayer.post { drawEdgeSlots() }
+                return@post
+            }
+
+            // ✅ kreni od samog ruba
+            val safe = 0
+
+            // ✅ malo širi slotovi
+            val keyW = computeRowSizing(7, availableKeyboardWidthPx()).keyW
+            val slotW = (keyW * 0.68f).toInt().coerceIn(dp(28), dp(80))
+
+            fun rowIndexForVisual(i: Int): Int = when (i) {
+                0 -> 0
+                1 -> keyboardContainer.childCount / 2
+                else -> keyboardContainer.childCount - 1
+            }.coerceIn(0, keyboardContainer.childCount - 1)
+
+            val ovLoc = IntArray(2)
+            overlayLayer.getLocationOnScreen(ovLoc)
+
+            for (i in 0..2) {
+                val rowIdx = rowIndexForVisual(i)
+                val row = keyboardContainer.getChildAt(rowIdx) ?: continue
+                if (row.height < dp(24)) continue
+
+                val rowLoc = IntArray(2)
+                row.getLocationOnScreen(rowLoc)
+
+                val top = (rowLoc[1] - ovLoc[1]).coerceIn(
+                    safe,
+                    maxOf(safe, overlayLayer.height - row.height - safe)
+                )
+                val h = row.height
+
+                fun addSlot(tag: String, isLeft: Boolean) {
                     val v = View(this).apply {
                         this.tag = tag
-                        setBackgroundResource(
-                            if (tag.contains("left"))
-                                R.drawable.hex_half_left
-                            else
-                                R.drawable.hex_half_right
-                        )
+                        setBackgroundResource(if (isLeft) R.drawable.hex_half_left else R.drawable.hex_half_right)
                     }
-                    val lp = FrameLayout.LayoutParams(slotWidth, slotHeight).apply {
+
+                    val lp = FrameLayout.LayoutParams(slotW, h).apply {
                         gravity = Gravity.START
-                        leftMargin = x
+
+                        // ✅ gurni skroz do ekrana, ignoriraj padding overlayLayer-a
+                        leftMargin = if (isLeft) {
+                            -overlayLayer.paddingLeft
+                        } else {
+                            overlayLayer.width - slotW + overlayLayer.paddingRight
+                        }
+
                         topMargin = top
                     }
+
                     overlayLayer.addView(v, lp)
                 }
-                addSlot("edge_slot_left_$i", safeEdge)
-                addSlot(
-                    "edge_slot_right_$i",
-                    overlayLayer.width - slotWidth - safeEdge
-                )
+
+                addSlot("edge_slot_left_$i", true)
+                addSlot("edge_slot_right_$i", false)
             }
         }
     }
@@ -405,10 +517,10 @@ class MyKeyboardService : InputMethodService() {
                         if (currentKeyboardConfig.specialLeft.isNotEmpty()) 1 else 0
                 buildRow(currentKeyboardConfig.specialRight, rowIndex)
             }
-            // nakon što se row-evi layoutaju, nacrtaj slotove pa ikone (anchor na slot)
             keyboardContainer.post {
+                syncOverlayHeightToContent()
                 drawEdgeSlots()
-                overlayLayer.post { drawEdgeIcons() }
+                drawEdgeIcons()
                 isDrawing = false
             }
         }
@@ -427,104 +539,88 @@ class MyKeyboardService : InputMethodService() {
         }
     }
     /* ✅ EDGE ICONS: anchor to OVERLAY slot tag */
-    /* ✅ EDGE ICONS: anchor to OVERLAY slot tag */
     private fun drawEdgeIcons() {
         overlayLayer.post {
-            // makni stare overlay ikone (slotove ne diramo)
+            // makni stare ikone (slotove NE diramo)
             val toRemove = mutableListOf<View>()
             for (i in 0 until overlayLayer.childCount) {
                 val v = overlayLayer.getChildAt(i)
-                if (v.tag == "edge_icon") toRemove.add(v)
+                val tag = v.tag?.toString() ?: continue
+                if (tag.startsWith("edge_icon_")) toRemove.add(v)
             }
             toRemove.forEach { overlayLayer.removeView(it) }
 
-            val safeEdge = dp(2)
+            val safe = dp(1)
             val slots: List<EdgeSlot> = EdgeSlotsStorage.load(this)
 
             fun addIcon(slot: EdgeSlot) {
                 if (slot.type == EdgeActionType.NONE) return
 
-                // 0,1 -> row 0; 2,3 -> row 1; 4,5 -> row 2
-                val visualIndex = slot.index / 2
+                val visualIndex = (slot.index / 2).coerceIn(0, 2)
+                val slotTag = if (slot.side == EdgePos.Side.LEFT) "edge_slot_left_$visualIndex"
+                else "edge_slot_right_$visualIndex"
 
-                val slotTag = if (slot.side == EdgePos.Side.LEFT) {
-                    "edge_slot_left_$visualIndex"
-                } else {
-                    "edge_slot_right_$visualIndex"
-                }
+                val iconTag = "edge_icon_${slot.index}"
+                if (overlayLayer.findViewWithTag<View>(iconTag) != null) return
 
                 val slotView = overlayLayer.findViewWithTag<View>(slotTag) ?: return
 
                 if (slotView.width <= 0 || slotView.height <= 0) {
-                    slotView.post { addIcon(slot) }
+                    slotView.post { if (overlayLayer.findViewWithTag<View>(iconTag) == null) addIcon(slot) }
                     return
                 }
 
+                val slotLoc = IntArray(2)
+                val ovLoc = IntArray(2)
+                slotView.getLocationOnScreen(slotLoc)
+                overlayLayer.getLocationOnScreen(ovLoc)
+
                 val boxW = slotView.width
                 val boxH = slotView.height
-                if (boxW <= 0 || boxH <= 0) return
 
-                val slotLoc = IntArray(2)
-                val overlayLoc = IntArray(2)
-                slotView.getLocationOnScreen(slotLoc)
-                overlayLayer.getLocationOnScreen(overlayLoc)
-
-                val rawLeft = slotLoc[0] - overlayLoc[0]
-                val rawTop = slotLoc[1] - overlayLoc[1]
-
-                val left = rawLeft
-                    .coerceAtLeast(safeEdge)
-                    .coerceAtMost(maxOf(safeEdge, overlayLayer.width - boxW - safeEdge))
-
-                val top = rawTop
-                    .coerceAtLeast(safeEdge)
-                    .coerceAtMost(maxOf(safeEdge, overlayLayer.height - boxH - safeEdge))
+                val left = (slotLoc[0] - ovLoc[0]).coerceIn(safe, overlayLayer.width - boxW - safe)
+                val top = (slotLoc[1] - ovLoc[1]).coerceIn(safe, overlayLayer.height - boxH - safe)
 
                 val box = FrameLayout(this).apply {
-                    tag = "edge_icon"
+                    tag = iconTag
                     layoutParams = FrameLayout.LayoutParams(boxW, boxH).apply {
                         gravity = Gravity.START
                         leftMargin = left
                         topMargin = top
                     }
+                    setBackgroundColor(0x00000000)
+                    isClickable = true
                 }
-
-                val iconSize = (boxH * 0.46f).toInt().coerceIn(dp(16), dp(26))
 
                 val icon = TextView(this).apply {
                     text = slot.label
-                    textSize = if (isPortrait()) 16f else 14f
                     gravity = Gravity.CENTER
                     includeFontPadding = false
 
-                    // SHIFT indikator
-                    if (slot.type == EdgeActionType.SHIFT && isShifted) {
-                        setTextColor(getColor(R.color.special_fill))
-                        scaleX = 1.15f
-                        scaleY = 1.15f
-                    } else {
-                        setTextColor(getColor(R.color.key_text))
-                        scaleX = 1f
-                        scaleY = 1f
-                    }
+                    val selectedShift = (slot.type == EdgeActionType.SHIFT && isShifted)
+                    setTextColor(if (selectedShift) getColor(R.color.special_text) else getColor(R.color.key_text))
+
+                    // malo veće, ali clampano
+                    textSize = (boxH * 0.30f / resources.displayMetrics.scaledDensity).coerceIn(12f, 22f)
+
+                    // “gurni” prema unutra (da sjedi na half-hexu)
+                    if (slot.side == EdgePos.Side.LEFT) setPadding(dp(7), 0, dp(2), 0)
+                    else setPadding(dp(2), 0, dp(7), 0)
                 }
 
-                val biasToEdge = when (slot.side) {
-                    EdgePos.Side.LEFT -> -dp(10)
-                    EdgePos.Side.RIGHT -> dp(10)
-                }
-
-                val iconLp = FrameLayout.LayoutParams(iconSize, iconSize).apply {
-                    gravity = Gravity.CENTER
-                    leftMargin = biasToEdge
-                }
-                box.addView(icon, iconLp)
+                box.addView(
+                    icon,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
 
                 box.setOnTouchListener { _, e ->
                     when (e.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             slotView.isPressed = true
-                            icon.alpha = 0.55f
+                            icon.alpha = 0.65f
                             true
                         }
                         MotionEvent.ACTION_UP -> {
@@ -548,52 +644,237 @@ class MyKeyboardService : InputMethodService() {
             slots.forEach { addIcon(it) }
         }
     }
+    // --- long press popup state ---
+    private val LIVE_REPLACE = false
+    private var lpHasLiveInserted = false
+
     private fun showLongPressPopup(anchor: View, chars: List<String>) {
         if (chars.isEmpty()) return
 
-        // zatvori stari popup
-        longPressPopup?.dismiss()
-        longPressPopup = null
+        hideLongPressPopup()
+
+        lpChars = chars
+        lpSelectedIndex = 0
+        lpHasLiveInserted = false
+
+        val maxW = (overlayLayer.width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels) - dp(16)
+
+        val cols = minOf(7, chars.size)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setBackgroundColor(0xFFFFFFFF.toInt())
+            // bitno: root mora znati svoju širinu
+            layoutParams = ViewGroup.LayoutParams(maxW, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        // Manji preview (da ne jede prostor)
+        val preview = TextView(this).apply {
+            text = chars.first()
+            textSize = 26f
+            setTextColor(0xFF000000.toInt())
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setPadding(0, 0, 0, dp(6))
+        }
+        lpPreviewTv = preview
+        root.addView(
+            preview,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
 
         val grid = GridLayout(this).apply {
-            columnCount = 6
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            columnCount = cols
+            useDefaultMargins = false
+            alignmentMode = GridLayout.ALIGN_BOUNDS
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        lpGrid = grid
+
+        val popupKeyH = (keyHeight() * 0.62f).toInt().coerceIn(dp(28), dp(70))
+        val popupTextSize = if (isPortrait()) 16f else 14f
+
+        chars.forEachIndexed { idx, ch ->
+            val kv = KeyView(this).apply {
+                tag = idx
+                text = ch
+                isAllCaps = false
+                shape = currentShape
+                gravity = Gravity.CENTER
+                isClickable = false
+                isFocusable = false
+                textSize = popupTextSize
+                setTextColor(getColor(R.color.key_text))
+                includeFontPadding = false
+                setPadding(0, 0, 0, 0)
+            }
+
+            // Svaka tipka puni svoj stupac (width=0 + weight 1f)
+            val lp = GridLayout.LayoutParams().apply {
+                rowSpec = GridLayout.spec(idx / cols)
+                columnSpec = GridLayout.spec(idx % cols, 1f)
+                width = 0
+                height = popupKeyH
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            }
+            grid.addView(kv, lp)
         }
 
-        chars.forEach { ch ->
-            val b = Button(this).apply {
-                text = ch
-                textSize = 18f
-                isAllCaps = false
-                setOnClickListener {
-                    currentInputConnection?.commitText(ch, 1)
-                    longPressPopup?.dismiss()
-                    longPressPopup = null
-                }
-            }
-            grid.addView(b)
-        }
+        root.addView(grid)
 
         val pw = PopupWindow(
-            grid,
+            root,
+            maxW,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            true
+            false
         ).apply {
-            isOutsideTouchable = true
-            elevation = dp(6).toFloat()
-            setOnDismissListener { longPressPopup = null }
+            isOutsideTouchable = false
+            isFocusable = false
+            // bitno: da se ne “odreže” čudno
+            isClippingEnabled = true
+            elevation = dp(10).toFloat()
+            setOnDismissListener {
+                longPressPopup = null
+                lpPreviewTv = null
+                lpGrid = null
+                lpChars = emptyList()
+                lpHasLiveInserted = false
+            }
         }
 
-        // prikaži iznad tipke
-        pw.showAsDropDown(anchor, 0, -anchor.height - dp(8))
+        // izmjeri da clamp radi točno
+        root.measure(
+            View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+
+        val anchorLoc = IntArray(2)
+        val rootLoc = IntArray(2)
+        anchor.getLocationOnScreen(anchorLoc)
+        overlayLayer.getLocationOnScreen(rootLoc)
+
+        val popupW = maxW
+        val popupH = root.measuredHeight
+
+        val desiredX = anchorLoc[0] - rootLoc[0] + anchor.width / 2 - popupW / 2
+        val desiredY = anchorLoc[1] - rootLoc[1] - popupH - dp(10)
+
+        val x = desiredX.coerceIn(dp(8), overlayLayer.width - popupW - dp(8))
+        val y = desiredY.coerceIn(dp(8), overlayLayer.height - popupH - dp(8))
+
+        pw.showAtLocation(overlayLayer, Gravity.NO_GRAVITY, x, y)
         longPressPopup = pw
+
+        updateLongPressHighlight()
+        root.post {
+            val rects = MutableList(lpChars.size) { android.graphics.Rect() }
+
+            val g = lpGrid ?: return@post
+            for (i in 0 until g.childCount) {
+                val child = g.getChildAt(i)
+                val idx = (child.tag as? Int) ?: continue
+                val loc = IntArray(2)
+                child.getLocationOnScreen(loc)
+                rects[idx] = android.graphics.Rect(
+                    loc[0], loc[1],
+                    loc[0] + child.width,
+                    loc[1] + child.height
+                )
+            }
+            lpRects = rects
+        }
+        if (LIVE_REPLACE) {
+            commitLiveSelected()
+        }
+    }
+
+    private fun updateLongPressHighlight() {
+        val grid = lpGrid ?: return
+
+        for (i in 0 until grid.childCount) {
+            val child = grid.getChildAt(i)
+            val idx = (child.tag as? Int) ?: continue
+
+            if (child is KeyView) {
+                if (idx == lpSelectedIndex) {
+                    child.customBgColor = getColor(R.color.special_fill)
+                    child.setTextColor(getColor(R.color.special_text))
+                    child.alpha = 1f
+                } else {
+                    child.customBgColor = null
+                    child.setTextColor(getColor(R.color.key_text))
+                    child.alpha = 0.65f
+                }
+            } else {
+                child.alpha = if (idx == lpSelectedIndex) 1f else 0.65f
+            }
+
+            child.scaleX = if (idx == lpSelectedIndex) 1.06f else 1f
+            child.scaleY = if (idx == lpSelectedIndex) 1.06f else 1f
+        }
+
+        lpPreviewTv?.text = lpChars.getOrNull(lpSelectedIndex) ?: ""
+    }
+
+    private fun moveLpSelection(dx: Int, dy: Int) {
+        if (lpChars.isEmpty()) return
+
+        val cols = lpGrid?.columnCount ?: 7
+        val total = lpChars.size
+        val rows = (total + cols - 1) / cols
+
+        val curRow = lpSelectedIndex / cols
+        val curCol = lpSelectedIndex % cols
+
+        var newRow = (curRow + dy).coerceIn(0, rows - 1)
+        var newCol = (curCol + dx).coerceIn(0, cols - 1)
+
+        var newIndex = newRow * cols + newCol
+
+        // zadnji red može imati manje elemenata
+        if (newIndex >= total) {
+            // pomakni ulijevo dok ne uđe u range
+            while (newIndex >= total && newCol > 0) {
+                newCol--
+                newIndex = newRow * cols + newCol
+            }
+            if (newIndex >= total) newIndex = total - 1
+        }
+
+        if (newIndex != lpSelectedIndex) {
+            lpSelectedIndex = newIndex
+            updateLongPressHighlight()
+
+            if (LIVE_REPLACE) {
+                replaceLiveSelected()
+            }
+        }
+    }
+
+    private fun commitLiveSelected() {
+        val ch = lpChars.getOrNull(lpSelectedIndex) ?: return
+        currentInputConnection?.commitText(ch, 1)
+        lpHasLiveInserted = true
+    }
+
+    private fun replaceLiveSelected() {
+        // briši prethodni samo ako smo već nešto upisali u live modu
+        if (lpHasLiveInserted) {
+            currentInputConnection?.deleteSurroundingText(1, 0)
+        }
+        commitLiveSelected()
     }
 
     private fun hideLongPressPopup() {
         longPressPopup?.dismiss()
         longPressPopup = null
     }
+
     /* ───────── KEY VIEW ───────── */
     private fun createKey(keyConfig: KeyConfig): KeyView = KeyView(this).apply {
         val label = keyConfig.label
@@ -615,50 +896,99 @@ class MyKeyboardService : InputMethodService() {
 
         var longPressTriggered = false
 
+        // swipe state
+        var startX = 0f
+        var startY = 0f
+        val step = dp(18) // koliko px moraš pomaknut za 1 “korak”
+
         val longPressRunnable = Runnable {
             if (label in nonBindable) return@Runnable
             val binds = keyConfig.longPressBindings
             if (binds.isNotEmpty()) {
                 longPressTriggered = true
-                // pokaži popup sa spremljenim znakovima
                 showLongPressPopup(this, binds)
+
+                // prvi znak selektiran
+                lpSelectedIndex = 0
+                updateLongPressHighlight()
+
+                // reset swipa da prvi pomak bude “čist”
+                // (inače može odmah preskočit)
+                // startX/startY ostaju na zadnjem touch pointu
             }
         }
 
-        // 🔥 ne koristimo setOnLongClickListener + Dialog (to ti ruši)
         isLongClickable = true
 
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
+
                 MotionEvent.ACTION_DOWN -> {
+                    startX = e.rawX
+                    startY = e.rawY
+
                     longPressTriggered = false
                     hideLongPressPopup()
 
-                    // start timer za long press
                     mainHandler.removeCallbacks(longPressRunnable)
                     mainHandler.postDelayed(longPressRunnable, longPressTimeout)
 
-                    // normalni behavior (pressed state, preview itd.)
+                    // da tipka dobije pressed state / vizual
                     inputController.handleTouch(v as TextView, e)
                     true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    if (!longPressTriggered) {
+                    if (longPressTriggered) {
+                        // dok je popup aktivan: ne diraj inputController
+                        val dx = e.rawX - startX
+                        val dy = e.rawY - startY
+
+                        val adx = kotlin.math.abs(dx)
+                        val ady = kotlin.math.abs(dy)
+
+                        // 1) “step” navigacija
+                        if (adx > ady && adx > step) {
+                            moveLpSelection(if (dx > 0) +1 else -1, 0)
+                            startX = e.rawX
+                            startY = e.rawY
+                            true
+                        } else if (ady > step) {
+                            moveLpSelection(0, if (dy > 0) +1 else -1)
+                            startX = e.rawX
+                            startY = e.rawY
+                            true
+                        } else {
+                            // 2) opcionalno: hover po rectovima (pratimo prst)
+                            if (lpRects.isNotEmpty()) {
+                                val rx = e.rawX.toInt()
+                                val ry = e.rawY.toInt()
+                                val newIdx = lpRects.indexOfFirst { it.contains(rx, ry) }
+                                if (newIdx != -1 && newIdx != lpSelectedIndex) {
+                                    lpSelectedIndex = newIdx
+                                    updateLongPressHighlight()
+                                }
+                            }
+                            true
+                        }
+                    } else {
                         inputController.handleTouch(v as TextView, e)
+                        true
                     }
-                    true
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
 
                     if (longPressTriggered) {
-                        // long press je okinut -> NE smije se upisat normalno slovo
+                        // pusti -> commit selektirani char
+                        lpChars.getOrNull(lpSelectedIndex)?.let { ch ->
+                            currentInputConnection?.commitText(ch, 1)
+                        }
+                        hideLongPressPopup()
                         v.isPressed = false
                         true
                     } else {
-                        // običan tap -> normalno ponašanje
                         inputController.handleTouch(v as TextView, e)
                         true
                     }
@@ -668,7 +998,6 @@ class MyKeyboardService : InputMethodService() {
             }
         }
     }
-
     /* ───────── INNER CLASSES ───────── */
     class CharSelectorAdapter(
         private val items: List<String>,

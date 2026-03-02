@@ -75,10 +75,10 @@ val defaultNumericLayout: KeyboardConfig = KeyboardConfig(
             KeyConfig("0"), KeyConfig("*"), KeyConfig("/"), KeyConfig("!")
         )),
 
-        // 5) & % @ # ABC
+        // 5) & % @ # ABC enter
         RowConfig(mutableListOf(
             KeyConfig("&"), KeyConfig("%"), KeyConfig("@"),
-            KeyConfig("#"), KeyConfig("abc")
+            KeyConfig("#"), KeyConfig("abc"), KeyConfig("↵")
         ))
     )
 )
