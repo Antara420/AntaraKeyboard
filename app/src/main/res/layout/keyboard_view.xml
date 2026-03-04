@@ -3,18 +3,24 @@
     android:id="@+id/keyboardRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="bottom"
+    android:background="?attr/keyboardBg"
+    android:clickable="true"
+    android:focusable="true"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:paddingStart="8dp"
     android:paddingEnd="8dp"
     android:paddingTop="6dp"
-    android:paddingBottom="6dp"
-    android:background="@color/keyboard_bg">
+    android:paddingBottom="6dp">
 
     <LinearLayout
         android:id="@+id/keyboardContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:gravity="bottom" />
+        android:gravity="bottom"
+        android:clipChildren="false"
+        android:clipToPadding="false" />
 
 </FrameLayout>

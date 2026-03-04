@@ -1,17 +1,57 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
 
-    <style name="Theme.AntaraKeyboard" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorSurface">@color/keyboard_bg</item>
-        <item name="colorOnSurface">@color/key_text</item>
-        <item name="colorPrimary">@color/special_fill</item>
-        <item name="colorOnPrimary">@color/special_text</item>
+    <!-- Base tema (manifest) -->
+    <style name="Theme.AntaraKeyboard.Base" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="keyboardBg">@color/keyboard_bg_light</item>
+        <item name="keyFill">@color/key_fill_light</item>
+        <item name="keyStroke">@color/key_stroke_light</item>
+        <item name="keyText">@color/key_text_light</item>
+
+        <item name="edgeSlotTint">@color/keyboard_bg_light</item>
+        <item name="edgeIconText">@color/key_text_light</item>
+        <item name="edgeIconTextActive">@color/special_fill</item>
+
+        <item name="enterFill">@color/special_fill</item>
+        <item name="enterText">@color/special_text</item>
+
+        <item name="android:windowBackground">@color/keyboard_bg_light</item>
     </style>
 
+    <!-- Light -->
     <style name="Theme.AntaraKeyboard.Light" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorSurface">@color/keyboard_bg</item>
-        <item name="colorOnSurface">@color/key_text</item>
-        <item name="colorPrimary">@color/special_fill</item>
-        <item name="colorOnPrimary">@color/special_text</item>
+        <item name="android:windowBackground">@color/keyboard_bg_light</item>
+
+        <item name="keyboardBg">@color/keyboard_bg_light</item>
+        <item name="keyFill">@color/key_fill_light</item>
+        <item name="keyStroke">@color/key_stroke_light</item>
+        <item name="keyText">@color/key_text_light</item>
+
+        <item name="edgeSlotTint">@color/keyboard_bg_light</item>
+        <item name="edgeIconText">@color/key_text_light</item>
+        <item name="edgeIconTextActive">@color/special_fill</item>
+
+        <item name="enterFill">@color/special_fill</item>
+        <item name="enterText">@color/special_text</item>
+        <item name="keyFillPressed">@color/key_fill_pressed</item>
+    </style>
+
+    <!-- Dark -->
+    <style name="Theme.AntaraKeyboard.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@color/keyboard_bg_dark</item>
+
+        <item name="keyboardBg">@color/keyboard_bg_dark</item>
+        <item name="keyFill">@color/key_fill_dark</item>
+        <item name="keyStroke">@color/key_stroke_dark</item>
+        <item name="keyText">@color/key_text_dark</item>
+
+        <item name="edgeSlotTint">@color/keyboard_bg_dark</item>
+        <item name="edgeIconText">@color/key_text_dark</item>
+        <item name="edgeIconTextActive">@color/special_fill</item>
+
+        <item name="enterFill">@color/special_fill</item>
+        <item name="enterText">@color/special_text</item>
+        <item name="keyFillPressed">@color/key_fill_pressed</item>
     </style>
 
 </resources>

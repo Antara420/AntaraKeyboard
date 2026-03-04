@@ -37,7 +37,10 @@ import com.example.antarakeyboard.model.EdgeSlot
 import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.GridLayout
-
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import androidx.core.graphics.drawable.DrawableCompat
+import android.view.ContextThemeWrapper
 
 
 class MyKeyboardService : InputMethodService() {
@@ -74,25 +77,40 @@ class MyKeyboardService : InputMethodService() {
         val isDark = getSharedPreferences("theme_prefs", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
 
-        val themedCtx = android.view.ContextThemeWrapper(
-            this,
-            if (isDark) R.style.Theme_AntaraKeyboard else R.style.Theme_AntaraKeyboard_Light
-        )
-        lastIsDark = isDark
-        // 1) inflate
-        rootView = layoutInflater.cloneInContext(themedCtx).inflate(R.layout.keyboard_view, null)
+        val themeRes = if (isDark) {
+            R.style.Theme_AntaraKeyboard_Dark
+        } else {
+            R.style.Theme_AntaraKeyboard_Light
+        }
 
-        // 2) findViewById ODMAH
+        val themedCtx = ContextThemeWrapper(this, themeRes)
+        lastIsDark = isDark
+
+        // 1) inflate u themed contextu
+        rootView = layoutInflater.cloneInContext(themedCtx)
+            .inflate(R.layout.keyboard_view, null)
+
+        // 2) findViewById
         overlayLayer = rootView.findViewById(R.id.keyboardRoot)
         keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
 
+        // 3) boja pozadine iz ODABRANE teme
+        val bg = keyboardBgColor(themedCtx)
+
+        // ✅ NAJBITNIJE: OPAQUE background na IME window
+        window?.window?.setBackgroundDrawable(ColorDrawable(bg))
+
+        // ✅ dodatno: background na view hijerarhiju
+        rootView.setBackgroundColor(bg)
+        overlayLayer.setBackgroundColor(bg)
+        keyboardContainer.setBackgroundColor(bg)
+
         overlayLayer.clipChildren = false
         overlayLayer.clipToPadding = false
-        // 3) sad smiješ dirat overlay/keyboard
-
         keyboardContainer.clipChildren = false
         keyboardContainer.clipToPadding = false
 
+        // keyboardContainer dolje u rootu
         keyboardContainer.layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -101,21 +119,21 @@ class MyKeyboardService : InputMethodService() {
 
         inputController = KeyInputController(this)
 
+        // base paddingi prije listenera
         val basePadL = overlayLayer.paddingLeft
         val basePadT = overlayLayer.paddingTop
         val basePadR = overlayLayer.paddingRight
         val basePadB = overlayLayer.paddingBottom
 
+        // samo padding zbog insets (NE diramo visinu!)
         ViewCompat.setOnApplyWindowInsetsListener(overlayLayer) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
             lastBottomInsetPx = bottomInset
             v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
-
-
             insets
         }
+
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
-        overlayLayer.post { applyKeyboardHeight(targetKeyboardHeightPx + lastBottomInsetPx) }
 
         currentShape = KeyboardPrefs.getShape(this)
         currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
@@ -124,25 +142,30 @@ class MyKeyboardService : InputMethodService() {
         overlayLayer.post { redrawKeyboard() }
         return rootView
     }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         setExtractViewShown(false)
+
         val isDarkNow = getSharedPreferences("theme_prefs", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
+
         if (lastIsDark != null && lastIsDark != isDarkNow) {
             lastIsDark = isDarkNow
             recreateInputView()
             return
         }
         lastIsDark = isDarkNow
+
         currentShape = KeyboardPrefs.getShape(this)
         currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
+
         val hasLetters = currentKeyboardConfig.rows.any { row ->
             row.keys.any { k -> k.label.length == 1 && k.label[0].isLetter() }
         }
         if (hasLetters) alphabetLayout = currentKeyboardConfig
+
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
-        overlayLayer.post { applyKeyboardHeight(targetKeyboardHeightPx + lastBottomInsetPx) }
         overlayLayer.post { redrawKeyboard() }
     }
     private fun syncOverlayHeightToContent() {
@@ -171,8 +194,8 @@ class MyKeyboardService : InputMethodService() {
         }
     }
     private fun recreateInputView() {
-        currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
-        redrawKeyboard()
+        // Forsira IME da koristi novi view sa novom temom
+        setInputView(onCreateInputView())
     }
     override fun onEvaluateFullscreenMode() = false
     override fun onCreateExtractTextView(): View? = null
@@ -224,6 +247,31 @@ class MyKeyboardService : InputMethodService() {
 
 
     /* ───────── HELPERS ───────── */
+
+    private fun themeColor(ctx: android.content.Context, attr: Int, fallback: Int): Int {
+        val tv = android.util.TypedValue()
+        val th = ctx.theme
+        return if (th.resolveAttribute(attr, tv, true) &&
+            tv.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT
+        ) tv.data else fallback
+    }
+
+    private fun keyboardBgColor(ctx: android.content.Context): Int {
+        return themeColor(
+            ctx,
+            android.R.attr.windowBackground,
+            themeColor(ctx, android.R.attr.colorBackground, Color.BLACK)
+        )
+    }
+
+    private fun edgeSlotTintColor(ctx: android.content.Context): Int =
+        themeColor(ctx, R.attr.edgeSlotTint, keyboardBgColor(ctx))
+
+    private fun edgeIconTextColor(ctx: android.content.Context): Int =
+        themeColor(ctx, R.attr.edgeIconText, 0xFFFFFFFF.toInt())
+
+    private fun edgeIconActiveColor(ctx: android.content.Context): Int =
+        themeColor(ctx, R.attr.edgeIconTextActive, edgeIconTextColor(ctx))
     private fun isPortrait() = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
     private fun computeTargetKeyboardHeight(): Int {
@@ -232,20 +280,6 @@ class MyKeyboardService : InputMethodService() {
         return (screenH * ratio).roundToInt().coerceAtLeast(dp(230))
     }
 
-    private fun applyKeyboardHeight(h: Int) {
-        val height = h.coerceAtLeast(dp(230))
-        val lp = overlayLayer.layoutParams ?: ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            height
-        )
-
-        if (lp.height != height) {
-            lp.height = height
-            overlayLayer.layoutParams = lp
-            overlayLayer.minimumHeight = height
-            overlayLayer.requestLayout()
-        }
-    }
     private fun totalVisibleRows(): Int {
         var rows = currentKeyboardConfig.rows.size
         if (currentKeyboardConfig.specialLeft.isNotEmpty()) rows += 1
@@ -387,23 +421,28 @@ class MyKeyboardService : InputMethodService() {
         }
         toRemove.forEach { overlayLayer.removeView(it) }
     }
+
+
+    /** Tekst (ikona) edge tipki kad je aktivno (SHIFT) */
     private fun drawEdgeSlots() {
         overlayLayer.post {
             clearEdgeSlots()
 
             if (keyboardContainer.childCount == 0) return@post
-            if (overlayLayer.width <= 0) {
+            if (overlayLayer.width <= 0 || overlayLayer.height <= 0) {
                 overlayLayer.post { drawEdgeSlots() }
                 return@post
             }
 
-            // ✅ kreni od samog ruba
-            val safe = 0
+            val safeY = dp(2)
+            val edgeOutset = dp(10)     // koliko “viri” van
+            val liftY = dp(12)          // malo gore
+            val rightNudge = dp(14)     // desne slotove ulijevo (ovo si već dirao)
 
-            // ✅ malo širi slotovi
             val keyW = computeRowSizing(7, availableKeyboardWidthPx()).keyW
-            val slotW = (keyW * 0.68f).toInt().coerceIn(dp(28), dp(80))
+            val slotW = (keyW * 0.46f).toInt().coerceIn(dp(22), dp(56))
 
+            val tint = edgeSlotTintColor(rootView.context)
             fun rowIndexForVisual(i: Int): Int = when (i) {
                 0 -> 0
                 1 -> keyboardContainer.childCount / 2
@@ -413,47 +452,60 @@ class MyKeyboardService : InputMethodService() {
             val ovLoc = IntArray(2)
             overlayLayer.getLocationOnScreen(ovLoc)
 
-            for (i in 0..2) {
-                val rowIdx = rowIndexForVisual(i)
-                val row = keyboardContainer.getChildAt(rowIdx) ?: continue
-                if (row.height < dp(24)) continue
+            fun firstKey(row: View): View? =
+                (row as? ViewGroup)?.takeIf { it.childCount > 0 }?.getChildAt(0)
 
-                val rowLoc = IntArray(2)
-                row.getLocationOnScreen(rowLoc)
+            fun addSlot(tag: String, isLeft: Boolean, top: Int, h: Int) {
+                val v = View(this).apply {
+                    this.tag = tag
+                    setBackgroundResource(if (isLeft) R.drawable.hex_half_left else R.drawable.hex_half_right)
 
-                val top = (rowLoc[1] - ovLoc[1]).coerceIn(
-                    safe,
-                    maxOf(safe, overlayLayer.height - row.height - safe)
-                )
-                val h = row.height
-
-                fun addSlot(tag: String, isLeft: Boolean) {
-                    val v = View(this).apply {
-                        this.tag = tag
-                        setBackgroundResource(if (isLeft) R.drawable.hex_half_left else R.drawable.hex_half_right)
+                    // ✅ tint u boju pozadine (kamuflaža)
+                    background?.mutate()?.let { dr ->
+                        DrawableCompat.setTint(dr, tint)
                     }
 
-                    val lp = FrameLayout.LayoutParams(slotW, h).apply {
-                        gravity = Gravity.START
-
-                        // ✅ gurni skroz do ekrana, ignoriraj padding overlayLayer-a
-                        leftMargin = if (isLeft) {
-                            -overlayLayer.paddingLeft
-                        } else {
-                            overlayLayer.width - slotW + overlayLayer.paddingRight
-                        }
-
-                        topMargin = top
-                    }
-
-                    overlayLayer.addView(v, lp)
+                    alpha = 0.95f
                 }
 
-                addSlot("edge_slot_left_$i", true)
-                addSlot("edge_slot_right_$i", false)
+                val lp = FrameLayout.LayoutParams(slotW, h).apply {
+                    gravity = Gravity.START
+                    leftMargin = if (isLeft) {
+                        -edgeOutset
+                    } else {
+                        overlayLayer.width - slotW + edgeOutset - rightNudge
+                    }
+                    topMargin = top
+                }
+
+                // iza tipki
+                overlayLayer.addView(v, 0, lp)
+            }
+
+            for (i in 0..2) {
+                val row = keyboardContainer.getChildAt(rowIndexForVisual(i)) ?: continue
+                val keyRef = firstKey(row) ?: continue
+
+                if (keyRef.width <= 0 || keyRef.height <= 0) {
+                    keyRef.post { drawEdgeSlots() }
+                    return@post
+                }
+
+                val keyLoc = IntArray(2)
+                keyRef.getLocationOnScreen(keyLoc)
+
+                val top = (keyLoc[1] - ovLoc[1] - liftY).coerceIn(
+                    safeY,
+                    overlayLayer.height - keyRef.height - safeY
+                )
+
+                addSlot("edge_slot_left_$i", true, top, keyRef.height)
+                addSlot("edge_slot_right_$i", false, top, keyRef.height)
             }
         }
     }
+
+
     /* ───────── REDRAW ───────── */
     private fun redrawKeyboard() {
         if (!::keyboardContainer.isInitialized) return
@@ -541,7 +593,7 @@ class MyKeyboardService : InputMethodService() {
     /* ✅ EDGE ICONS: anchor to OVERLAY slot tag */
     private fun drawEdgeIcons() {
         overlayLayer.post {
-            // makni stare ikone (slotove NE diramo)
+            // makni stare ikone
             val toRemove = mutableListOf<View>()
             for (i in 0 until overlayLayer.childCount) {
                 val v = overlayLayer.getChildAt(i)
@@ -550,15 +602,20 @@ class MyKeyboardService : InputMethodService() {
             }
             toRemove.forEach { overlayLayer.removeView(it) }
 
-            val safe = dp(1)
+            val safe = dp(2)
+            val rightIconNudge = dp(14) // ✅ ovo MIČE ono što vidiš
+
             val slots: List<EdgeSlot> = EdgeSlotsStorage.load(this)
 
             fun addIcon(slot: EdgeSlot) {
                 if (slot.type == EdgeActionType.NONE) return
 
                 val visualIndex = (slot.index / 2).coerceIn(0, 2)
-                val slotTag = if (slot.side == EdgePos.Side.LEFT) "edge_slot_left_$visualIndex"
-                else "edge_slot_right_$visualIndex"
+                val slotTag = if (slot.side == EdgePos.Side.LEFT) {
+                    "edge_slot_left_$visualIndex"
+                } else {
+                    "edge_slot_right_$visualIndex"
+                }
 
                 val iconTag = "edge_icon_${slot.index}"
                 if (overlayLayer.findViewWithTag<View>(iconTag) != null) return
@@ -566,7 +623,7 @@ class MyKeyboardService : InputMethodService() {
                 val slotView = overlayLayer.findViewWithTag<View>(slotTag) ?: return
 
                 if (slotView.width <= 0 || slotView.height <= 0) {
-                    slotView.post { if (overlayLayer.findViewWithTag<View>(iconTag) == null) addIcon(slot) }
+                    slotView.post { addIcon(slot) }
                     return
                 }
 
@@ -578,8 +635,13 @@ class MyKeyboardService : InputMethodService() {
                 val boxW = slotView.width
                 val boxH = slotView.height
 
-                val left = (slotLoc[0] - ovLoc[0]).coerceIn(safe, overlayLayer.width - boxW - safe)
-                val top = (slotLoc[1] - ovLoc[1]).coerceIn(safe, overlayLayer.height - boxH - safe)
+                var left = (slotLoc[0] - ovLoc[0]).coerceIn(safe, overlayLayer.width - boxW - safe)
+                val top  = (slotLoc[1] - ovLoc[1]).coerceIn(safe, overlayLayer.height - boxH - safe)
+
+                // ✅ desne ikone ulijevo
+                if (slot.side == EdgePos.Side.RIGHT) {
+                    left = (left - rightIconNudge).coerceAtLeast(safe)
+                }
 
                 val box = FrameLayout(this).apply {
                     tag = iconTag
@@ -598,14 +660,14 @@ class MyKeyboardService : InputMethodService() {
                     includeFontPadding = false
 
                     val selectedShift = (slot.type == EdgeActionType.SHIFT && isShifted)
-                    setTextColor(if (selectedShift) getColor(R.color.special_text) else getColor(R.color.key_text))
+                    setTextColor(
+                        if (selectedShift) edgeIconActiveColor(rootView.context)
+                        else edgeIconTextColor(rootView.context)
+                    )
+                    textSize = (boxH * 0.28f / resources.displayMetrics.scaledDensity).coerceIn(12f, 20f)
 
-                    // malo veće, ali clampano
-                    textSize = (boxH * 0.30f / resources.displayMetrics.scaledDensity).coerceIn(12f, 22f)
-
-                    // “gurni” prema unutra (da sjedi na half-hexu)
-                    if (slot.side == EdgePos.Side.LEFT) setPadding(dp(7), 0, dp(2), 0)
-                    else setPadding(dp(2), 0, dp(7), 0)
+                    if (slot.side == EdgePos.Side.LEFT) setPadding(dp(8), 0, dp(2), 0)
+                    else setPadding(dp(2), 0, dp(8), 0)
                 }
 
                 box.addView(
@@ -620,17 +682,20 @@ class MyKeyboardService : InputMethodService() {
                     when (e.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             slotView.isPressed = true
-                            icon.alpha = 0.65f
+                            slotView.alpha = 0.85f
+                            icon.alpha = 0.70f
                             true
                         }
                         MotionEvent.ACTION_UP -> {
                             slotView.isPressed = false
+                            slotView.alpha = 1f
                             icon.alpha = 1f
                             performEdgeAction(slot)
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             slotView.isPressed = false
+                            slotView.alpha = 1f
                             icon.alpha = 1f
                             true
                         }
@@ -709,7 +774,7 @@ class MyKeyboardService : InputMethodService() {
                 isClickable = false
                 isFocusable = false
                 textSize = popupTextSize
-                setTextColor(getColor(R.color.key_text))
+                setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, Color.WHITE))
                 includeFontPadding = false
                 setPadding(0, 0, 0, 0)
             }
@@ -796,18 +861,22 @@ class MyKeyboardService : InputMethodService() {
     private fun updateLongPressHighlight() {
         val grid = lpGrid ?: return
 
+        val fillActive = themeColor(this, R.attr.enterFill, 0xFF2E55E7.toInt())
+        val textActive = themeColor(this, R.attr.enterText, 0xFFFFFFFF.toInt())
+        val textNormal = themeColor(this, R.attr.keyText, 0xFFFFFFFF.toInt())
+
         for (i in 0 until grid.childCount) {
             val child = grid.getChildAt(i)
             val idx = (child.tag as? Int) ?: continue
 
             if (child is KeyView) {
                 if (idx == lpSelectedIndex) {
-                    child.customBgColor = getColor(R.color.special_fill)
-                    child.setTextColor(getColor(R.color.special_text))
+                    child.customBgColor = fillActive
+                    child.setTextColor(textActive)
                     child.alpha = 1f
                 } else {
                     child.customBgColor = null
-                    child.setTextColor(getColor(R.color.key_text))
+                    child.setTextColor(textNormal)
                     child.alpha = 0.65f
                 }
             } else {
@@ -882,7 +951,7 @@ class MyKeyboardService : InputMethodService() {
         isAllCaps = false
         shape = currentShape
         isSpecial = (label == "↵")
-        setTextColor(getColor(R.color.key_text))
+        setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, 0xFFFFFFFF.toInt()))
         textSize = if (isPortrait()) 18f else 16f
         gravity = Gravity.CENTER
 
@@ -998,38 +1067,49 @@ class MyKeyboardService : InputMethodService() {
             }
         }
     }
+
+
+
     /* ───────── INNER CLASSES ───────── */
     class CharSelectorAdapter(
         private val items: List<String>,
         private val onItemClick: (String) -> Unit
     ) : RecyclerView.Adapter<CharSelectorAdapter.ViewHolder>() {
+
         private var selectedPos = RecyclerView.NO_POSITION
-        inner class ViewHolder(val button: android.widget.Button) : RecyclerView.ViewHolder(button) {
+
+        inner class ViewHolder(val button: Button) : RecyclerView.ViewHolder(button) {
             fun bind(char: String, isSelected: Boolean) {
                 button.text = char
                 button.setBackgroundColor(if (isSelected) 0xFFFFCC80.toInt() else 0x00000000)
+
                 button.setOnClickListener {
                     val old = selectedPos
                     val newPos = bindingAdapterPosition
                     if (newPos == RecyclerView.NO_POSITION) return@setOnClickListener
+
                     selectedPos = newPos
-                    notifyItemChanged(old)
+                    if (old != RecyclerView.NO_POSITION) notifyItemChanged(old)
                     notifyItemChanged(selectedPos)
+
                     onItemClick(char)
                 }
             }
         }
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val btn = android.widget.Button(parent.context).apply {
+            val btn = Button(parent.context).apply {
                 isAllCaps = false
                 textSize = 18f
                 setPadding(16, 16, 16, 16)
             }
             return ViewHolder(btn)
         }
+
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             holder.bind(items[position], position == selectedPos)
         }
-        override fun getItemCount() = items.size
+
+        override fun getItemCount(): Int = items.size
     }
 }

@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="keyboard_bg">#FF000000</color>
+    <!-- DARK -->
+    <color name="keyboard_bg_dark">#FF000000</color>
 
-    <color name="key_fill">#FF3E3E3E</color>
-    <color name="key_fill_pressed">#FF585858</color>
-    <color name="key_stroke">#FF0F0F0F</color>
+    <color name="key_fill_dark">#FF3E3E3E</color>
+    <color name="key_fill_pressed_dark">#FF585858</color>
+    <color name="key_stroke_dark">#FF0F0F0F</color>
 
-    <color name="key_text">#FFFFFFFF</color>
+    <color name="key_text_dark">#FFFFFFFF</color>
 
     <color name="special_fill">#FF2E55E7</color>
     <color name="special_fill_pressed">#FF2A55FF</color>
     <color name="special_text">#FFFFFFFF</color>
+    <color name="key_fill_pressed">#FF585858</color>
 </resources>

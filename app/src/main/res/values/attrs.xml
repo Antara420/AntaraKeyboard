@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="keyboardBg" format="color"/>
+
+    <attr name="keyFill" format="color"/>
+    <attr name="keyStroke" format="color"/>
+    <attr name="keyText" format="color"/>
+
+    <attr name="edgeSlotTint" format="color"/>
+    <attr name="edgeIconText" format="color"/>
+    <attr name="edgeIconTextActive" format="color"/>
+
+    <attr name="enterFill" format="color"/>
+    <attr name="enterFillPressed" format="color" />
+    <attr name="enterText" format="color"/>
+
+    <attr name="keyFillPressed" format="color"/>
+</resources>

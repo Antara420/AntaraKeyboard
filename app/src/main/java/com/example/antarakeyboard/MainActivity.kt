@@ -170,15 +170,15 @@ class MainActivity : AppCompatActivity() {
             KeyboardPrefs.setShape(this, KeyShape.HEX)
             KeyboardPrefs.clearKeyHeightPx(this)
 
-            // ✅ reset colors iz resursa (light/dark automatski)
-            val keyFill = getColor(R.color.key_fill)
+            // ✅ reset colors iz TRENUTNE teme appa (ne ovisi o imenima u colors.xml)
+            val keyFill = themeColor(R.attr.keyFill, getColor(R.color.key_fill_light))
             val specialFill = getColor(R.color.special_fill)
             val specialText = getColor(R.color.special_text)
 
-            // Space: koristi key_fill (ili key_bg ako ti je to fill)
+// Space: koristi keyFill iz teme
             KeyboardPrefs.setSpaceColors(this, keyFill, keyFill, true)
 
-            // Enter: special fill + special text
+// Enter: special fill + special text
             KeyboardPrefs.setEnterColors(this, specialFill, specialText)
 
             EdgeSlotsStorage.reset(this)
@@ -895,4 +895,11 @@ class MainActivity : AppCompatActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
     private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
     private fun pxToDp(px: Int): Int = (px / resources.displayMetrics.density).toInt()
+
+    private fun themeColor(attr: Int, fallback: Int): Int {
+        val tv = android.util.TypedValue()
+        return if (theme.resolveAttribute(attr, tv, true) &&
+            tv.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT
+        ) tv.data else fallback
+    }
 }

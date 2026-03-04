@@ -47,9 +47,17 @@ class KeyView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
     }
     private fun applyThemeColors() {
-        fill.color = context.getColor(R.color.key_fill)
-        stroke.color = context.getColor(R.color.key_stroke)
-        // setTextColor makni, to radi applyTextColor()
+        // boje iz teme (Light/Dark koje ti biraš u serviceu)
+        fill.color = themeColor(R.attr.keyFill, 0xFF777777.toInt())
+        stroke.color = themeColor(R.attr.keyStroke, 0xFF222222.toInt())
+        // text se rješava u applyTextColor()
+    }
+    private fun themeColor(attr: Int, fallback: Int): Int {
+        val tv = android.util.TypedValue()
+        val ok = context.theme.resolveAttribute(attr, tv, true)
+        return if (ok && tv.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT) {
+            tv.data
+        } else fallback
     }
     private val path = Path()
 
@@ -72,9 +80,9 @@ class KeyView @JvmOverloads constructor(
     /** Ako se text promijeni (npr. enter ikona), boja ostane ok */
     private fun applyTextColor() {
         val c = if (isSpecial) {
-            ContextCompat.getColor(context, R.color.special_text)
+            themeColor(R.attr.enterText, 0xFFFFFFFF.toInt())
         } else {
-            ContextCompat.getColor(context, R.color.key_text)
+            themeColor(R.attr.keyText, 0xFFFFFFFF.toInt())
         }
         setTextColor(c)
     }
@@ -96,13 +104,12 @@ class KeyView @JvmOverloads constructor(
 
         val pressed = isPressed
 
-        // ✅ theme colors (light/dark automatski)
-        val keyFill = ContextCompat.getColor(context, R.color.key_fill)
-        val keyFillPressed = ContextCompat.getColor(context, R.color.key_fill_pressed)
-        val keyStroke = ContextCompat.getColor(context, R.color.key_stroke)
+        val keyFill = themeColor(R.attr.keyFill, 0xFF777777.toInt())
+        val keyFillPressed = themeColor(R.attr.keyFillPressed, keyFill)
+        val keyStroke = themeColor(R.attr.keyStroke, 0xFF222222.toInt())
 
-        val specialFill = ContextCompat.getColor(context, R.color.special_fill)
-        val specialFillPressed = ContextCompat.getColor(context, R.color.special_fill_pressed)
+        val specialFill = themeColor(R.attr.enterFill, 0xFF2E55E7.toInt())
+        val specialFillPressed = themeColor(R.attr.enterFillPressed, specialFill)
 
         val bg = customBgColor ?: when {
             isSpecial -> if (pressed) specialFillPressed else specialFill
