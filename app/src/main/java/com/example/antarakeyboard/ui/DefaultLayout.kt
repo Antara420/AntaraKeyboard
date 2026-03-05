@@ -3,6 +3,7 @@ package com.example.antarakeyboard.ui
 import com.example.antarakeyboard.model.KeyConfig
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.RowConfig
+import com.example.antarakeyboard.model.addLongPress
 
 val defaultKeyboardLayout: KeyboardConfig = KeyboardConfig(
     specialLeft = mutableListOf(),
@@ -39,7 +40,17 @@ val defaultKeyboardLayout: KeyboardConfig = KeyboardConfig(
             KeyConfig("b"), KeyConfig("123"), KeyConfig("↵")
         ))
     )
-)
+).also { cfg ->
+    // longpress za "." ->  " , : ;
+    listOf("\"", ",", ":", ";").forEach { ch ->
+        cfg.addLongPress(".", ch)
+    }
+
+    // longpress za "?" -> ! ( ) { } [ ]
+    listOf("!", "(", ")", "{", "}", "[", "]").forEach { ch ->
+        cfg.addLongPress("?", ch)
+    }
+}
 
 
 // =========================
@@ -75,10 +86,44 @@ val defaultNumericLayout: KeyboardConfig = KeyboardConfig(
             KeyConfig("0"), KeyConfig("*"), KeyConfig("/"), KeyConfig("!")
         )),
 
-        // 5) & % @ # ABC enter
+        // 5) & % @ # abc ↵
         RowConfig(mutableListOf(
             KeyConfig("&"), KeyConfig("%"), KeyConfig("@"),
             KeyConfig("#"), KeyConfig("abc"), KeyConfig("↵")
         ))
     )
-)
+).also { cfg ->
+    // da radi i u numeric layoutu
+    listOf("\"", ",", ":", ";").forEach { ch ->
+        cfg.addLongPress(".", ch)
+    }
+    listOf("!", "(", ")", "{", "}", "[", "]").forEach { ch ->
+        cfg.addLongPress("?", ch)
+    }
+}
+
+
+//velika slova
+private fun KeyboardConfig.toUppercaseLetters(): KeyboardConfig {
+    fun up(k: KeyConfig): KeyConfig {
+        val lbl = k.label
+        val newLbl =
+            if (lbl.length == 1 && lbl[0].isLetter()) lbl.uppercase()
+            else lbl
+
+        return k.copy(label = newLbl, longPressBindings = k.longPressBindings.toMutableList())
+    }
+
+    return copy(
+        rows = rows.map { row -> row.copy(keys = row.keys.map(::up).toMutableList()) }.toMutableList(),
+        specialLeft = specialLeft.map(::up).toMutableList(),
+        specialRight = specialRight.map(::up).toMutableList()
+    )
+}
+
+val defaultKeyboardLayoutUpper: KeyboardConfig =
+    defaultKeyboardLayout.toUppercaseLetters().also { cfg ->
+        // isti longpress kao na loweru
+        listOf("\"", ",", ":", ";").forEach { ch -> cfg.addLongPress(".", ch) }
+        listOf("!", "(", ")", "{", "}", "[", "]").forEach { ch -> cfg.addLongPress("?", ch) }
+    }

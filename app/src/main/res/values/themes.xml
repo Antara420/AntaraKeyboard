@@ -28,12 +28,13 @@
         <item name="keyText">@color/key_text_light</item>
 
         <item name="edgeSlotTint">@color/keyboard_bg_light</item>
-        <item name="edgeIconText">@color/key_text_light</item>
+        <item name="edgeIconText">#FF000000</item>
         <item name="edgeIconTextActive">@color/special_fill</item>
 
         <item name="enterFill">@color/special_fill</item>
         <item name="enterText">@color/special_text</item>
         <item name="keyFillPressed">@color/key_fill_pressed</item>
+
     </style>
 
     <!-- Dark -->

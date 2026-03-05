@@ -41,6 +41,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import androidx.core.graphics.drawable.DrawableCompat
 import android.view.ContextThemeWrapper
+import android.content.Context
 
 
 class MyKeyboardService : InputMethodService() {
@@ -56,6 +57,7 @@ class MyKeyboardService : InputMethodService() {
     private lateinit var rootView: View
     private lateinit var keyboardContainer: LinearLayout
     private lateinit var overlayLayer: FrameLayout
+    private lateinit var themedCtx: Context
     private val myDefaultNumericConfig: KeyboardConfig
         get() = defaultNumericLayout
     private val KEY_GAP_DP = 1
@@ -70,7 +72,8 @@ class MyKeyboardService : InputMethodService() {
     private var lpSelectedIndex: Int = 0
     private var lpPreviewTv: TextView? = null
     private var lpGrid: GridLayout? = null
-
+    private var alphabetLayoutLower: KeyboardConfig? = null
+    private var alphabetLayoutUpper: KeyboardConfig? = null
 
     /* ───────── LIFECYCLE ───────── */
     override fun onCreateInputView(): View {
@@ -83,7 +86,7 @@ class MyKeyboardService : InputMethodService() {
             R.style.Theme_AntaraKeyboard_Light
         }
 
-        val themedCtx = ContextThemeWrapper(this, themeRes)
+        themedCtx = ContextThemeWrapper(this, themeRes)
         lastIsDark = isDark
 
         // 1) inflate u themed contextu
@@ -97,10 +100,10 @@ class MyKeyboardService : InputMethodService() {
         // 3) boja pozadine iz ODABRANE teme
         val bg = keyboardBgColor(themedCtx)
 
-        // ✅ NAJBITNIJE: OPAQUE background na IME window
+        // ✅ OPAQUE background na IME window
         window?.window?.setBackgroundDrawable(ColorDrawable(bg))
 
-        // ✅ dodatno: background na view hijerarhiju
+        // ✅ background na view hijerarhiju
         rootView.setBackgroundColor(bg)
         overlayLayer.setBackgroundColor(bg)
         keyboardContainer.setBackgroundColor(bg)
@@ -110,7 +113,6 @@ class MyKeyboardService : InputMethodService() {
         keyboardContainer.clipChildren = false
         keyboardContainer.clipToPadding = false
 
-        // keyboardContainer dolje u rootu
         keyboardContainer.layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -125,7 +127,6 @@ class MyKeyboardService : InputMethodService() {
         val basePadR = overlayLayer.paddingRight
         val basePadB = overlayLayer.paddingBottom
 
-        // samo padding zbog insets (NE diramo visinu!)
         ViewCompat.setOnApplyWindowInsetsListener(overlayLayer) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
             lastBottomInsetPx = bottomInset
@@ -134,10 +135,19 @@ class MyKeyboardService : InputMethodService() {
         }
 
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
-
         currentShape = KeyboardPrefs.getShape(this)
-        currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
-        alphabetLayout = currentKeyboardConfig
+
+        // ✅ učitaj BASE layout (bez edge stripanja)
+        val baseCfg = KeyboardPrefs.loadLayout(this)
+
+        alphabetLayoutLower = baseCfg
+        alphabetLayoutUpper = makeUppercaseConfig(baseCfg)
+
+        // ✅ odaberi aktivni alfabet layout ovisno o shift
+        val activeAlphabet = if (isShifted) alphabetLayoutUpper else alphabetLayoutLower
+
+        // ✅ tek sad makni edge tipke iz layouta
+        currentKeyboardConfig = applyEdgeKeys(activeAlphabet ?: baseCfg)
 
         overlayLayer.post { redrawKeyboard() }
         return rootView
@@ -164,7 +174,6 @@ class MyKeyboardService : InputMethodService() {
             row.keys.any { k -> k.label.length == 1 && k.label[0].isLetter() }
         }
         if (hasLetters) alphabetLayout = currentKeyboardConfig
-
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
         overlayLayer.post { redrawKeyboard() }
     }
@@ -247,6 +256,22 @@ class MyKeyboardService : InputMethodService() {
 
 
     /* ───────── HELPERS ───────── */
+
+    private fun makeUppercaseConfig(cfg: KeyboardConfig): KeyboardConfig {
+        fun up(k: KeyConfig): KeyConfig {
+            val lbl = k.label
+            val newLbl =
+                if (lbl.length == 1 && lbl[0].isLetter()) lbl.uppercase()
+                else lbl
+            return k.copy(label = newLbl, longPressBindings = k.longPressBindings.toMutableList())
+        }
+
+        return cfg.copy(
+            rows = cfg.rows.map { r -> r.copy(keys = r.keys.map(::up).toMutableList()) }.toMutableList(),
+            specialLeft = cfg.specialLeft.map(::up).toMutableList(),
+            specialRight = cfg.specialRight.map(::up).toMutableList()
+        )
+    }
 
     private fun themeColor(ctx: android.content.Context, attr: Int, fallback: Int): Int {
         val tv = android.util.TypedValue()
@@ -340,6 +365,21 @@ class MyKeyboardService : InputMethodService() {
     fun hidePreview() { /* disabled */ }
     fun toggleShift() {
         isShifted = !isShifted
+
+        // prebacuj samo kad si na alfabetu (ne numeric)
+        val isNumeric = currentKeyboardConfig.rows.any { row ->
+            row.keys.any { it.label == "123" || it.label.equals("abc", true) }
+        }
+
+        if (!isNumeric) {
+            val lower = alphabetLayoutLower
+            val upper = alphabetLayoutUpper
+
+            if (lower != null && upper != null) {
+                currentKeyboardConfig = applyEdgeKeys(if (isShifted) upper else lower)
+            }
+        }
+
         redrawKeyboard()
     }
     fun commitText(text: String) {
@@ -441,8 +481,8 @@ class MyKeyboardService : InputMethodService() {
 
             val keyW = computeRowSizing(7, availableKeyboardWidthPx()).keyW
             val slotW = (keyW * 0.46f).toInt().coerceIn(dp(22), dp(56))
+            val tint = edgeSlotTintColor(themedCtx)
 
-            val tint = edgeSlotTintColor(rootView.context)
             fun rowIndexForVisual(i: Int): Int = when (i) {
                 0 -> 0
                 1 -> keyboardContainer.childCount / 2
@@ -458,12 +498,11 @@ class MyKeyboardService : InputMethodService() {
             fun addSlot(tag: String, isLeft: Boolean, top: Int, h: Int) {
                 val v = View(this).apply {
                     this.tag = tag
-                    setBackgroundResource(if (isLeft) R.drawable.hex_half_left else R.drawable.hex_half_right)
+                    setBackgroundResource(
+                        if (isLeft) R.drawable.hex_half_left_edge_sel
+                        else R.drawable.hex_half_right_edge_sel
+                    )
 
-                    // ✅ tint u boju pozadine (kamuflaža)
-                    background?.mutate()?.let { dr ->
-                        DrawableCompat.setTint(dr, tint)
-                    }
 
                     alpha = 0.95f
                 }
@@ -655,14 +694,15 @@ class MyKeyboardService : InputMethodService() {
                 }
 
                 val icon = TextView(this).apply {
-                    text = slot.label
+                    val isShiftSlot = slot.type == EdgeActionType.SHIFT
+                    text = if (isShiftSlot && isShifted) "⇪" else slot.label
                     gravity = Gravity.CENTER
                     includeFontPadding = false
 
                     val selectedShift = (slot.type == EdgeActionType.SHIFT && isShifted)
                     setTextColor(
-                        if (selectedShift) edgeIconActiveColor(rootView.context)
-                        else edgeIconTextColor(rootView.context)
+                        if (selectedShift) edgeIconActiveColor(themedCtx)
+                        else edgeIconTextColor(themedCtx)
                     )
                     textSize = (boxH * 0.28f / resources.displayMetrics.scaledDensity).coerceIn(12f, 20f)
 
@@ -947,18 +987,40 @@ class MyKeyboardService : InputMethodService() {
     /* ───────── KEY VIEW ───────── */
     private fun createKey(keyConfig: KeyConfig): KeyView = KeyView(this).apply {
         val label = keyConfig.label
-        text = label
+
+        // ✅ prikaz tipke (UI)
+        val display = if (label.length == 1 && label[0].isLetter()) {
+            if (isShifted) label.uppercase() else label.lowercase()
+        } else label
+
+        text = display
         isAllCaps = false
         shape = currentShape
         isSpecial = (label == "↵")
-        setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, 0xFFFFFFFF.toInt()))
-        textSize = if (isPortrait()) 18f else 16f
         gravity = Gravity.CENTER
 
+        // ✅ tekst boja iz THEME attr (ne R.color.key_text!)
+        setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, Color.WHITE))
+
+        // enter boje ostaju iz prefs
         if (label == "↵") {
             customBgColor = KeyboardPrefs.getEnterBg(context)
             setTextColor(KeyboardPrefs.getEnterIcon(context))
         }
+
+        // ✅ SHIFT: kad je uključen, bijela ispuna + crni tekst, i promijeni ikonu
+        if (label == "⇧") {
+            if (isShifted) {
+                text = "⇪" // opcionalno, da se vidi da je ON
+                customBgColor = Color.WHITE
+                setTextColor(Color.BLACK)
+            } else {
+                text = "⇧"
+                customBgColor = null
+                setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, Color.WHITE))
+            }
+        }
+
 
         val nonBindable = setOf("⇧", "⌫", "↵", "123", "ABC", "abc", " ")
         val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()

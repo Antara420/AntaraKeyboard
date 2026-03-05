@@ -205,6 +205,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         val slots = EdgeSlotsStorage.load(this).toMutableList()
+        fun reindexSlots() {
+            for (i in 0 until slots.size) {
+                slots[i] = slots[i].copy(index = i)
+            }
+        }
+        fun fixedSideForIndex(i: Int): EdgePos.Side =
+            if (i % 2 == 0) EdgePos.Side.LEFT else EdgePos.Side.RIGHT
+
+        fun fixSlotPosition(i: Int, s: EdgeSlot): EdgeSlot =
+            s.copy(index = i, side = fixedSideForIndex(i))
+
 
         fun buildGrid() {
             grid.removeAllViews()
@@ -233,10 +244,10 @@ class MainActivity : AppCompatActivity() {
                     tag = index
                 }
 
-                // klik -> picker (tvoj postojeći flow)
+                // klik -> picker
                 btn.setOnClickListener {
                     showEdgeTypePicker(slot) { newSlot ->
-                        val normalized = normalizeSlot(newSlot)
+                        val normalized = fixSlotPosition(index, normalizeSlot(newSlot))
                         enforceNoDuplicates(slots, index, normalized)
                         slots[index] = normalized
                         buildGrid()
@@ -253,7 +264,6 @@ class MainActivity : AppCompatActivity() {
                 btn.setOnDragListener { v, e ->
                     when (e.action) {
                         DragEvent.ACTION_DRAG_STARTED -> {
-                            // prihvati samo naš ClipData
                             e.clipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true
                         }
 
@@ -277,6 +287,10 @@ class MainActivity : AppCompatActivity() {
                             val tmp = slots[from]
                             slots[from] = slots[to]
                             slots[to] = tmp
+
+                            // ✅ nakon swap-a zakucaj index+side po poziciji
+                            slots[from] = fixSlotPosition(from, slots[from])
+                            slots[to] = fixSlotPosition(to, slots[to])
 
                             buildGrid()
                             true

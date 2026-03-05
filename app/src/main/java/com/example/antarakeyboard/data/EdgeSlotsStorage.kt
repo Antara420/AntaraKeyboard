@@ -42,8 +42,13 @@ object EdgeSlotsStorage {
     }
 
     fun save(ctx: Context, slots: List<EdgeSlot>) {
-        val fixed = (if (slots.size == 6) slots else defaultSlots()).sortedBy { it.index }
-
+        val base = (if (slots.size == 6) slots else defaultSlots()).sortedBy { it.index }
+        val fixed = base.mapIndexed { i, s ->
+            s.copy(
+                index = i,
+                side = if (i % 2 == 0) EdgePos.Side.LEFT else EdgePos.Side.RIGHT
+            )
+        }
         val arr = JSONArray()
         fixed.forEach { s ->
             val o = JSONObject()
