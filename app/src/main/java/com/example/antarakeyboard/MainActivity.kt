@@ -4,7 +4,6 @@ import android.app.Dialog
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -12,15 +11,11 @@ import android.view.Window
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.example.antarakeyboard.data.EdgeKeyPrefs
 import com.example.antarakeyboard.data.EdgePos
 import com.example.antarakeyboard.data.KeyboardPrefs
 import com.example.antarakeyboard.model.KeyShape
-import com.example.antarakeyboard.model.KeyboardConfig
-import com.example.antarakeyboard.model.addLongPress
 import com.example.antarakeyboard.ui.ShapePreviewView
 import com.example.antarakeyboard.ui.LongPressKeyPickerDialog
-import kotlin.math.roundToInt
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.antarakeyboard.data.EdgeSlotsStorage
 import com.example.antarakeyboard.model.EdgeActionType
@@ -36,23 +31,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tri: RadioButton
     private lateinit var circle: RadioButton
     private lateinit var cube: RadioButton
-    private lateinit var seek: SeekBar
     private lateinit var bindLPButton: Button
     private lateinit var resetLayoutButton: Button
     // --- Edge key UI ---
 
-    // --- key height preview dialog state ---
-    private var sizePreviewDialog: Dialog? = null
-    private var previewKeyboardContainer: LinearLayout? = null
-    private var okBtn: Button? = null
-    private var cancelBtn: Button? = null
-    private var previewBuilt = false
-    private var savedKeyHeightPx = 0
-    private var pendingKeyHeightPx = 0
-    // range u dp
-    private val minKeyDp = 36
-    private val maxKeyDp = 90
-    private val defaultKeyDp = 52
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -129,7 +112,6 @@ class MainActivity : AppCompatActivity() {
         }
 
 
-        seek = findViewById(R.id.sizeSeek)
         preview = findViewById(R.id.preview)
 
         hex = findViewById(R.id.hexBtn)
@@ -140,9 +122,7 @@ class MainActivity : AppCompatActivity() {
         bindLPButton = findViewById(R.id.bindLPButton)
         resetLayoutButton = findViewById(R.id.resetLayoutButton)
 
-
-
-        // Shape init
+// Shape init
         val savedShape = KeyboardPrefs.getShape(this)
         preview.shape = savedShape
         setCheckedForShape(savedShape)
@@ -168,26 +148,22 @@ class MainActivity : AppCompatActivity() {
         resetLayoutButton.setOnClickListener {
             KeyboardPrefs.clearLayout(this)
             KeyboardPrefs.setShape(this, KeyShape.HEX)
-            KeyboardPrefs.clearKeyHeightPx(this)
 
-            // ✅ reset colors iz TRENUTNE teme appa (ne ovisi o imenima u colors.xml)
             val keyFill = themeColor(R.attr.keyFill, getColor(R.color.key_fill_light))
             val specialFill = getColor(R.color.special_fill)
             val specialText = getColor(R.color.special_text)
 
-// Space: koristi keyFill iz teme
             KeyboardPrefs.setSpaceColors(this, keyFill, keyFill, true)
-
-// Enter: special fill + special text
             KeyboardPrefs.setEnterColors(this, specialFill, specialText)
 
             EdgeSlotsStorage.reset(this)
 
-            setupKeyHeightSlider()
+            preview.shape = KeyShape.HEX
+            setCheckedForShape(KeyShape.HEX)
+
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
         }
 
-        setupKeyHeightSlider()
     }
     private fun showEdgeSlotsDialog() {
 
@@ -205,11 +181,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val slots = EdgeSlotsStorage.load(this).toMutableList()
-        fun reindexSlots() {
-            for (i in 0 until slots.size) {
-                slots[i] = slots[i].copy(index = i)
-            }
-        }
+
         fun fixedSideForIndex(i: Int): EdgePos.Side =
             if (i % 2 == 0) EdgePos.Side.LEFT else EdgePos.Side.RIGHT
 
@@ -336,37 +308,7 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun showEdgeActionPicker(
-        slots: MutableList<EdgeSlot>,
-        index: Int,
-        onUpdated: () -> Unit
-    ) {
-        val oldSlot = slots[index]
 
-        // Uključi i NONE da možeš maknut akciju
-        val types = EdgeActionType.values().toList()
-        val labels = types.map { it.name }
-
-        AlertDialog.Builder(this)
-            .setTitle("Select action")
-            .setItems(labels.toTypedArray()) { _, which ->
-                val pickedType = types[which]
-
-                if (pickedType == EdgeActionType.CHAR) {
-                    // CHAR -> otvori meni special charova
-                    showSpecialCharPicker { ch ->
-                        val newSlot = oldSlot.copy(type = EdgeActionType.CHAR, value = ch)
-                        applyNoDuplicates(slots, index, newSlot)
-                        onUpdated()
-                    }
-                } else {
-                    val newSlot = oldSlot.copy(type = pickedType, value = null)
-                    applyNoDuplicates(slots, index, newSlot)
-                    onUpdated()
-                }
-            }
-            .show()
-    }
     private fun normalizeSlot(s: EdgeSlot): EdgeSlot {
         return when (s.type) {
             EdgeActionType.CHAR -> s.copy(value = s.value?.takeIf { it.isNotBlank() })
@@ -745,142 +687,9 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         }
 
-    /* =========================
-       KEY HEIGHT SLIDER (only)
-       ========================= */
 
-    private fun setupKeyHeightSlider() {
-        val minPx = dpToPx(minKeyDp)
-        val maxPx = dpToPx(maxKeyDp)
-        val defPx = dpToPx(defaultKeyDp)
 
-        val stored = KeyboardPrefs.getKeyHeightPx(this)
-        savedKeyHeightPx = if (stored > 0) stored else defPx
-        pendingKeyHeightPx = savedKeyHeightPx
 
-        seek.max = 100
-
-        val p = ((savedKeyHeightPx - minPx).toFloat() / (maxPx - minPx).toFloat() * 100f)
-            .roundToInt()
-            .coerceIn(0, 100)
-        seek.progress = p
-
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onStartTrackingTouch(sb: SeekBar?) {
-                showKeyboardKeyHeightPreview(minPx, maxPx)
-                pendingKeyHeightPx = pxFromProgress(sb?.progress ?: 0, minPx, maxPx)
-                updatePreviewKeyHeights(pendingKeyHeightPx)
-            }
-
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                pendingKeyHeightPx = pxFromProgress(progress, minPx, maxPx)
-                if (sizePreviewDialog?.isShowing == true) updatePreviewKeyHeights(pendingKeyHeightPx)
-            }
-
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
-    }
-
-    private fun pxFromProgress(progress: Int, minPx: Int, maxPx: Int): Int {
-        val t = progress.coerceIn(0, 100) / 100f
-        return (minPx + t * (maxPx - minPx)).roundToInt().coerceIn(minPx, maxPx)
-    }
-
-    private fun showKeyboardKeyHeightPreview(minPx: Int, maxPx: Int) {
-        if (sizePreviewDialog?.isShowing == true) return
-
-        val defPx = dpToPx(defaultKeyDp)
-        val stored = KeyboardPrefs.getKeyHeightPx(this)
-        savedKeyHeightPx = if (stored > 0) stored else defPx
-        pendingKeyHeightPx = savedKeyHeightPx.coerceIn(minPx, maxPx)
-
-        val d = Dialog(this)
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        d.setContentView(R.layout.dialog_keyboard_preview)
-        d.setCancelable(false)
-        d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        previewKeyboardContainer = d.findViewById(R.id.previewKeyboardContainer)
-        okBtn = d.findViewById(R.id.okBtn)
-        cancelBtn = d.findViewById(R.id.cancelBtn)
-
-        previewBuilt = false
-
-        val cfg = KeyboardPrefs.loadLayout(this)
-        buildKeyboardPreview(cfg, pendingKeyHeightPx)
-
-        d.window?.decorView?.post { updatePreviewKeyHeights(pendingKeyHeightPx) }
-
-        cancelBtn?.setOnClickListener {
-            pendingKeyHeightPx = savedKeyHeightPx
-            d.dismiss()
-            clearPreviewDialogRefs()
-        }
-
-        okBtn?.setOnClickListener {
-            KeyboardPrefs.setKeyHeightPx(this, pendingKeyHeightPx.coerceIn(minPx, maxPx))
-            Toast.makeText(this, "Key height saved: ${pxToDp(pendingKeyHeightPx)}dp", Toast.LENGTH_SHORT).show()
-            d.dismiss()
-            clearPreviewDialogRefs()
-        }
-
-        sizePreviewDialog = d
-        d.show()
-    }
-
-    private fun clearPreviewDialogRefs() {
-        sizePreviewDialog = null
-        previewKeyboardContainer = null
-        okBtn = null
-        cancelBtn = null
-        previewBuilt = false
-    }
-
-    private fun buildKeyboardPreview(config: KeyboardConfig, keyHeightPx: Int) {
-        val container = previewKeyboardContainer ?: return
-        if (previewBuilt) return
-
-        container.removeAllViews()
-
-        fun addRow(labels: List<String>) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            labels.forEach { label ->
-                row.addView(createPreviewKey(label), LinearLayout.LayoutParams(0, keyHeightPx, 1f))
-            }
-            container.addView(row)
-        }
-
-        if (config.specialLeft.isNotEmpty()) addRow(config.specialLeft.map { it.label })
-        config.rows.forEach { rowCfg -> addRow(rowCfg.keys.map { it.label }) }
-        if (config.specialRight.isNotEmpty()) addRow(config.specialRight.map { it.label })
-
-        previewBuilt = true
-    }
-
-    private fun updatePreviewKeyHeights(keyHeightPx: Int) {
-        val container = previewKeyboardContainer ?: return
-        if (!previewBuilt) return
-
-        for (i in 0 until container.childCount) {
-            val row = container.getChildAt(i) as? LinearLayout ?: continue
-            for (j in 0 until row.childCount) {
-                val child = row.getChildAt(j)
-                child.layoutParams = child.layoutParams.apply { height = keyHeightPx }
-            }
-        }
-        container.requestLayout()
-    }
-
-    private fun createPreviewKey(text: String): Button {
-        return Button(this).apply {
-            this.text = text
-            isAllCaps = false
-            isClickable = false
-            isFocusable = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-        }
-    }
 
 
     /* =========================
@@ -907,8 +716,7 @@ class MainActivity : AppCompatActivity() {
        ========================= */
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
-    private fun pxToDp(px: Int): Int = (px / resources.displayMetrics.density).toInt()
+
 
     private fun themeColor(attr: Int, fallback: Int): Int {
         val tv = android.util.TypedValue()

@@ -122,7 +122,6 @@ object KeyboardPrefs {
 
     fun getEnterIcon(context: Context): Int =
         prefs(context).getInt(ENTER_ICON, 0xFFFFFFFF.toInt()) // default bijelo
-
     fun setEnterBg(context: Context, color: Int) {
         prefs(context).edit().putInt(ENTER_BG, color).apply()
     }

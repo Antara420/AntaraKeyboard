@@ -82,18 +82,7 @@
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Keyboard size -->
-        <TextView
-            android:layout_marginTop="18dp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Keyboard size"
-            android:textSize="18sp" />
 
-        <SeekBar
-            android:id="@+id/sizeSeek"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
 
         <!-- Key shape -->
         <TextView

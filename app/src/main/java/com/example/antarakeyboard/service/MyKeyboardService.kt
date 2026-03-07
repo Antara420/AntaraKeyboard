@@ -50,7 +50,6 @@ class MyKeyboardService : InputMethodService() {
     private var isDrawing = false
     private var lastBottomInsetPx: Int = 0
     private var currentKeyboardConfig: KeyboardConfig = defaultKeyboardLayout
-    private var alphabetLayout: KeyboardConfig? = null
     private var currentShape: KeyShape = KeyShape.HEX
     private val mainHandler = Handler(Looper.getMainLooper())
     private var previewPopup: PopupWindow? = null
@@ -128,12 +127,21 @@ class MyKeyboardService : InputMethodService() {
         val basePadB = overlayLayer.paddingBottom
 
         ViewCompat.setOnApplyWindowInsetsListener(overlayLayer) { v, insets ->
-            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-            lastBottomInsetPx = bottomInset
-            v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
+            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+
+            if (lastBottomInsetPx != bottomInset) {
+                lastBottomInsetPx = bottomInset
+                v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
+
+                v.post {
+                    syncOverlayHeightToContent()
+                    overlayLayer.requestLayout()
+                }
+            }
+
             insets
         }
-
+        ViewCompat.requestApplyInsets(overlayLayer)
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
         currentShape = KeyboardPrefs.getShape(this)
 
@@ -157,9 +165,13 @@ class MyKeyboardService : InputMethodService() {
         super.onStartInputView(info, restarting)
         setExtractViewShown(false)
 
+        // ✅ 1) SHIFT uvijek reset kad se tipkovnica opet otvori
+        isShifted = false
+
         val isDarkNow = getSharedPreferences("theme_prefs", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
 
+        // ✅ 2) ako se tema promijenila, rebuild (OK)
         if (lastIsDark != null && lastIsDark != isDarkNow) {
             lastIsDark = isDarkNow
             recreateInputView()
@@ -167,32 +179,44 @@ class MyKeyboardService : InputMethodService() {
         }
         lastIsDark = isDarkNow
 
+        // ✅ 3) učitaj shape + layout
         currentShape = KeyboardPrefs.getShape(this)
-        currentKeyboardConfig = applyEdgeKeys(KeyboardPrefs.loadLayout(this))
+        val baseCfg = KeyboardPrefs.loadLayout(this)
+        val loaded = applyEdgeKeys(baseCfg)
+        currentKeyboardConfig = loaded
 
-        val hasLetters = currentKeyboardConfig.rows.any { row ->
+        val hasLetters = baseCfg.rows.any { row ->
             row.keys.any { k -> k.label.length == 1 && k.label[0].isLetter() }
         }
-        if (hasLetters) alphabetLayout = currentKeyboardConfig
+
+        if (hasLetters) {
+            alphabetLayoutLower = baseCfg
+            alphabetLayoutUpper = makeUppercaseConfig(baseCfg)
+            currentKeyboardConfig = applyEdgeKeys(alphabetLayoutLower ?: baseCfg)
+        }
+
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
         overlayLayer.post { redrawKeyboard() }
     }
     private fun syncOverlayHeightToContent() {
         if (!::overlayLayer.isInitialized || !::keyboardContainer.isInitialized) return
+
         val contentH = keyboardContainer.height
         if (contentH <= 0) return
 
-        // koliko realno treba da stane sadržaj
-        val desired = contentH + overlayLayer.paddingTop + overlayLayer.paddingBottom
+        val extraBottomSafety = dp(10)
 
-        // tvoja "normalna" ciljna visina (ratio) + inset
-        val target = (targetKeyboardHeightPx + lastBottomInsetPx).coerceAtLeast(dp(230))
+        val desired = contentH +
+                overlayLayer.paddingTop +
+                overlayLayer.paddingBottom +
+                extraBottomSafety
 
-        // ✅ clamp: ne dopusti da bude veće od targeta
-        val newH = desired.coerceIn(dp(230), target)
+        val maxTarget = (computeTargetKeyboardHeight() + lastBottomInsetPx).coerceAtLeast(dp(230))
+        val newH = desired.coerceIn(dp(180), maxTarget)
 
         val lp = overlayLayer.layoutParams ?: ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, newH
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            newH
         )
 
         if (lp.height != newH) {
@@ -220,7 +244,6 @@ class MyKeyboardService : InputMethodService() {
         val slots = EdgeSlotsStorage.load(this).filter { it.type != EdgeActionType.NONE }
         if (slots.isEmpty()) return copy
 
-        // Koje tipke MORAJU nestat iz normalnog layouta kad su na edgeu
         val removeLabels = buildSet<String> {
             slots.forEach { s ->
                 when (s.type) {
@@ -229,7 +252,6 @@ class MyKeyboardService : InputMethodService() {
                     EdgeActionType.ENTER -> add("↵")
                     EdgeActionType.SPACE -> add(" ")
                     EdgeActionType.CHAR -> {
-                        // za char edge: makni i label i value ako ih koristiš
                         if (s.label.isNotBlank()) add(s.label)
                         val v = s.value
                         if (!v.isNullOrBlank()) add(v)
@@ -251,7 +273,23 @@ class MyKeyboardService : InputMethodService() {
     }
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+
+        // ✅ reset shift kad se tipkovnica "zatvori"
+        isShifted = false
+
         hideLongPressPopup()
+        hideKeyPreview()
+
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+
+        // ✅ sigurnosno (nekad se finish ne okine kako očekuješ)
+        isShifted = false
+
+        hideLongPressPopup()
+        hideKeyPreview()
     }
 
 
@@ -289,8 +327,6 @@ class MyKeyboardService : InputMethodService() {
         )
     }
 
-    private fun edgeSlotTintColor(ctx: android.content.Context): Int =
-        themeColor(ctx, R.attr.edgeSlotTint, keyboardBgColor(ctx))
 
     private fun edgeIconTextColor(ctx: android.content.Context): Int =
         themeColor(ctx, R.attr.edgeIconText, 0xFFFFFFFF.toInt())
@@ -313,7 +349,6 @@ class MyKeyboardService : InputMethodService() {
     }
 
     private fun keyHeight(): Int {
-        val scale = KeyboardPrefs.getScale(this).coerceIn(0.7f, 1.7f)
         val rows = totalVisibleRows()
 
         val containerH = (targetKeyboardHeightPx + lastBottomInsetPx).takeIf { it > 0 }
@@ -322,13 +357,22 @@ class MyKeyboardService : InputMethodService() {
         val usableH = (containerH - overlayLayer.paddingTop - overlayLayer.paddingBottom)
             .coerceAtLeast(dp(150))
 
-        val denom = if (currentShape == KeyShape.HEX) {
-            (rows - (rows - 1) * OVERLAP_RATIO).coerceAtLeast(1f)
-        } else rows.toFloat()
+        val denom = when (currentShape) {
+            KeyShape.HEX -> (rows - (rows - 1) * OVERLAP_RATIO).coerceAtLeast(1f)
+            KeyShape.TRIANGLE -> rows.toFloat()
+            KeyShape.CIRCLE -> rows.toFloat()
+            KeyShape.CUBE -> rows.toFloat()
+        }
 
         val usableForKeys = (usableH * 0.92f).toInt()
-        val baseKeyH = (usableForKeys / denom).toInt()
-        return ((baseKeyH * scale) * 0.98f).toInt().coerceIn(dp(36), dp(175))
+        val baseH = (usableForKeys / denom).toInt().coerceAtLeast(dp(36))
+
+        return when (currentShape) {
+            KeyShape.HEX -> (baseH * 1.08f).toInt()
+            KeyShape.TRIANGLE -> (baseH * 0.92f).toInt()
+            KeyShape.CIRCLE -> (baseH * 0.96f).toInt()
+            KeyShape.CUBE -> (baseH * 0.96f).toInt()
+        }
     }
 
     private fun availableKeyboardWidthPx(): Int {
@@ -393,8 +437,14 @@ class MyKeyboardService : InputMethodService() {
                 return
             }
             "ABC", "abc" -> {
-                // vrati na alfabet (ako imaš spremljen)
-                currentKeyboardConfig = applyEdgeKeys(alphabetLayout ?: defaultKeyboardLayout)
+                val baseCfg = KeyboardPrefs.loadLayout(this)
+                alphabetLayoutLower = baseCfg
+                alphabetLayoutUpper = makeUppercaseConfig(baseCfg)
+                currentKeyboardConfig = applyEdgeKeys(if (isShifted) {
+                    alphabetLayoutUpper ?: baseCfg
+                } else {
+                    alphabetLayoutLower ?: baseCfg
+                })
                 redrawKeyboard()
                 return
             }
@@ -417,38 +467,62 @@ class MyKeyboardService : InputMethodService() {
         val triOverlapX: Int,
         val triOverlapY: Int
     )
-    private fun gapPxForShape(): Int = dp(KEY_GAP_DP)
+    private fun gapPxForShape(): Int = when (currentShape) {
+        KeyShape.HEX -> dp(1)
+        KeyShape.TRIANGLE -> dp(0)
+        KeyShape.CIRCLE -> dp(4)
+        KeyShape.CUBE -> dp(4)
+    }
     private fun computeRowSizing(count: Int, availW: Int): RowSizing {
         val gap = gapPxForShape()
-        val stdKeyW = ((availW - (7 - 1) * gap) / 7f).toInt().coerceAtLeast(dp(36))
+
+        val effectiveAvailW = when (currentShape) {
+            KeyShape.HEX -> availW
+            KeyShape.TRIANGLE -> (availW * 0.78f).toInt()
+            KeyShape.CIRCLE -> (availW * 0.92f).toInt()
+            KeyShape.CUBE -> (availW * 0.92f).toInt()
+        }
+
+        val stdKeyW = ((effectiveAvailW - (7 - 1) * gap) / 7f)
+            .toInt()
+            .coerceAtLeast(dp(36))
+
         val keyW: Int
         val outer: Int
+
         if (count == 7) {
-            keyW = ((availW - (count - 1) * gap) / count.toFloat()).toInt().coerceAtLeast(dp(36))
-            outer = 0
+            keyW = ((effectiveAvailW - (count - 1) * gap) / count.toFloat())
+                .toInt()
+                .coerceAtLeast(dp(36))
+            val used = count * keyW + (count - 1) * gap
+            outer = ((availW - used) / 2).coerceAtLeast(0)
         } else if (count == 6) {
             keyW = stdKeyW
             val used = count * keyW + (count - 1) * gap
             outer = ((availW - used) / 2).coerceAtLeast(0)
         } else {
-            keyW = ((availW - (count - 1) * gap) / max(1, count).toFloat())
+            keyW = ((effectiveAvailW - (count - 1) * gap) / max(1, count).toFloat())
                 .toInt()
                 .coerceAtLeast(dp(36))
-            outer = 0
+            val used = count * keyW + (count - 1) * gap
+            outer = ((availW - used) / 2).coerceAtLeast(0)
         }
+
         val keyH = keyHeight()
-        val hexOverlap = if (currentShape == KeyShape.HEX) (keyH * OVERLAP_RATIO).toInt() else 0
-        val triOX = 0
-        val triOY = 0
-        val finalOuter = if (currentShape == KeyShape.TRIANGLE) 0 else outer
+
+        val overlap = when (currentShape) {
+            KeyShape.HEX -> (keyH * OVERLAP_RATIO).toInt()
+            else -> 0
+        }
+
         return RowSizing(
             keyW = keyW,
             keyH = keyH,
             gapPx = gap,
-            outerPadPx = finalOuter,
-            overlapPx = hexOverlap,
-            triOverlapX = triOX,
-            triOverlapY = triOY
+            outerPadPx = outer,
+            overlapPx = overlap,
+            triOverlapX = 0,
+            triOverlapY = 0
         )
     }
     /* ───────── OVERLAY CLEANUP ───────── */
@@ -475,13 +549,12 @@ class MyKeyboardService : InputMethodService() {
             }
 
             val safeY = dp(2)
-            val edgeOutset = dp(10)     // koliko “viri” van
-            val liftY = dp(12)          // malo gore
-            val rightNudge = dp(14)     // desne slotove ulijevo (ovo si već dirao)
+            val edgeOutset = dp(10)
+            val liftY = dp(12)
+            val rightNudge = dp(14)
 
             val keyW = computeRowSizing(7, availableKeyboardWidthPx()).keyW
             val slotW = (keyW * 0.46f).toInt().coerceIn(dp(22), dp(56))
-            val tint = edgeSlotTintColor(themedCtx)
 
             fun rowIndexForVisual(i: Int): Int = when (i) {
                 0 -> 0
@@ -502,8 +575,6 @@ class MyKeyboardService : InputMethodService() {
                         if (isLeft) R.drawable.hex_half_left_edge_sel
                         else R.drawable.hex_half_right_edge_sel
                     )
-
-
                     alpha = 0.95f
                 }
 
@@ -517,7 +588,6 @@ class MyKeyboardService : InputMethodService() {
                     topMargin = top
                 }
 
-                // iza tipki
                 overlayLayer.addView(v, 0, lp)
             }
 
@@ -555,24 +625,31 @@ class MyKeyboardService : InputMethodService() {
             keyboardContainer.removeAllViews()
             var spaceIndex = 0
             fun buildRow(keys: List<KeyConfig>, containerRowIndex: Int) {
+                if (keys.isEmpty()) return
+
                 val availW = availableKeyboardWidthPx()
                 val sizing = computeRowSizing(keys.size, availW)
+
                 val vPad = when (currentShape) {
                     KeyShape.TRIANGLE -> 0
                     KeyShape.HEX -> dp(1)
                     else -> dp(2)
                 }
+
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(0, vPad, 0, vPad)
+                    setPadding(sizing.outerPadPx, vPad, sizing.outerPadPx, vPad)
                     clipToPadding = false
                 }
+
                 keys.forEachIndexed { i, key ->
                     val kv = createKey(key)
+
                     if (currentShape == KeyShape.TRIANGLE) {
                         kv.triangleFlipped = (i % 2 == 1)
                     }
+
                     if (kv.text.toString() == " ") {
                         val linked = KeyboardPrefs.isSpaceLinked(this)
                         val c1 = KeyboardPrefs.getSpace1Bg(this)
@@ -580,20 +657,24 @@ class MyKeyboardService : InputMethodService() {
                         kv.customBgColor = if (spaceIndex == 0) c1 else c2
                         spaceIndex++
                     }
+
                     val lp = LinearLayout.LayoutParams(sizing.keyW, sizing.keyH)
                     if (i > 0) lp.leftMargin = sizing.gapPx
                     row.addView(kv, lp)
                 }
+
                 val lpRow = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
+
                 if (containerRowIndex > 0) {
                     lpRow.topMargin = when (currentShape) {
                         KeyShape.HEX -> -sizing.overlapPx
                         else -> 0
                     }
                 }
+
                 keyboardContainer.addView(row, lpRow)
             }
             if (currentKeyboardConfig.specialLeft.isNotEmpty()) {
@@ -610,9 +691,11 @@ class MyKeyboardService : InputMethodService() {
             }
             keyboardContainer.post {
                 syncOverlayHeightToContent()
-                drawEdgeSlots()
-                drawEdgeIcons()
-                isDrawing = false
+                overlayLayer.post {
+                    drawEdgeSlots()
+                    drawEdgeIcons()
+                    isDrawing = false
+                }
             }
         }
     }
@@ -632,7 +715,6 @@ class MyKeyboardService : InputMethodService() {
     /* ✅ EDGE ICONS: anchor to OVERLAY slot tag */
     private fun drawEdgeIcons() {
         overlayLayer.post {
-            // makni stare ikone
             val toRemove = mutableListOf<View>()
             for (i in 0 until overlayLayer.childCount) {
                 val v = overlayLayer.getChildAt(i)
@@ -642,7 +724,7 @@ class MyKeyboardService : InputMethodService() {
             toRemove.forEach { overlayLayer.removeView(it) }
 
             val safe = dp(2)
-            val rightIconNudge = dp(14) // ✅ ovo MIČE ono što vidiš
+            val rightIconNudge = dp(14)
 
             val slots: List<EdgeSlot> = EdgeSlotsStorage.load(this)
 
@@ -675,9 +757,8 @@ class MyKeyboardService : InputMethodService() {
                 val boxH = slotView.height
 
                 var left = (slotLoc[0] - ovLoc[0]).coerceIn(safe, overlayLayer.width - boxW - safe)
-                val top  = (slotLoc[1] - ovLoc[1]).coerceIn(safe, overlayLayer.height - boxH - safe)
+                val top = (slotLoc[1] - ovLoc[1]).coerceIn(safe, overlayLayer.height - boxH - safe)
 
-                // ✅ desne ikone ulijevo
                 if (slot.side == EdgePos.Side.RIGHT) {
                     left = (left - rightIconNudge).coerceAtLeast(safe)
                 }
@@ -749,11 +830,12 @@ class MyKeyboardService : InputMethodService() {
             slots.forEach { addIcon(it) }
         }
     }
+
     // --- long press popup state ---
     private val LIVE_REPLACE = false
     private var lpHasLiveInserted = false
 
-    private fun showLongPressPopup(anchor: View, chars: List<String>) {
+    private fun showLongPressPopup(anchor: View, chars: List<String>) {  
         if (chars.isEmpty()) return
 
         hideLongPressPopup()
@@ -988,7 +1070,18 @@ class MyKeyboardService : InputMethodService() {
     private fun createKey(keyConfig: KeyConfig): KeyView = KeyView(this).apply {
         val label = keyConfig.label
 
-        // ✅ prikaz tipke (UI)
+        if (label.isEmpty()) {
+            text = ""
+            isAllCaps = false
+            shape = currentShape
+            gravity = Gravity.CENTER
+            isClickable = false
+            isFocusable = false
+            alpha = 0.12f
+            customBgColor = keyboardBgColor(themedCtx)
+            return@apply
+        }
+
         val display = if (label.length == 1 && label[0].isLetter()) {
             if (isShifted) label.uppercase() else label.lowercase()
         } else label
@@ -999,19 +1092,16 @@ class MyKeyboardService : InputMethodService() {
         isSpecial = (label == "↵")
         gravity = Gravity.CENTER
 
-        // ✅ tekst boja iz THEME attr (ne R.color.key_text!)
         setTextColor(themeColor(this@MyKeyboardService, R.attr.keyText, Color.WHITE))
 
-        // enter boje ostaju iz prefs
         if (label == "↵") {
             customBgColor = KeyboardPrefs.getEnterBg(context)
             setTextColor(KeyboardPrefs.getEnterIcon(context))
         }
 
-        // ✅ SHIFT: kad je uključen, bijela ispuna + crni tekst, i promijeni ikonu
         if (label == "⇧") {
             if (isShifted) {
-                text = "⇪" // opcionalno, da se vidi da je ON
+                text = "⇪"
                 customBgColor = Color.WHITE
                 setTextColor(Color.BLACK)
             } else {
@@ -1021,16 +1111,13 @@ class MyKeyboardService : InputMethodService() {
             }
         }
 
-
         val nonBindable = setOf("⇧", "⌫", "↵", "123", "ABC", "abc", " ")
         val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
 
         var longPressTriggered = false
-
-        // swipe state
         var startX = 0f
         var startY = 0f
-        val step = dp(18) // koliko px moraš pomaknut za 1 “korak”
+        val step = dp(18)
 
         val longPressRunnable = Runnable {
             if (label in nonBindable) return@Runnable
@@ -1038,14 +1125,8 @@ class MyKeyboardService : InputMethodService() {
             if (binds.isNotEmpty()) {
                 longPressTriggered = true
                 showLongPressPopup(this, binds)
-
-                // prvi znak selektiran
                 lpSelectedIndex = 0
                 updateLongPressHighlight()
-
-                // reset swipa da prvi pomak bude “čist”
-                // (inače može odmah preskočit)
-                // startX/startY ostaju na zadnjem touch pointu
             }
         }
 
@@ -1053,32 +1134,24 @@ class MyKeyboardService : InputMethodService() {
 
         setOnTouchListener { v, e ->
             when (e.actionMasked) {
-
                 MotionEvent.ACTION_DOWN -> {
                     startX = e.rawX
                     startY = e.rawY
-
                     longPressTriggered = false
                     hideLongPressPopup()
-
                     mainHandler.removeCallbacks(longPressRunnable)
                     mainHandler.postDelayed(longPressRunnable, longPressTimeout)
-
-                    // da tipka dobije pressed state / vizual
                     inputController.handleTouch(v as TextView, e)
                     true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
                     if (longPressTriggered) {
-                        // dok je popup aktivan: ne diraj inputController
                         val dx = e.rawX - startX
                         val dy = e.rawY - startY
-
                         val adx = kotlin.math.abs(dx)
                         val ady = kotlin.math.abs(dy)
 
-                        // 1) “step” navigacija
                         if (adx > ady && adx > step) {
                             moveLpSelection(if (dx > 0) +1 else -1, 0)
                             startX = e.rawX
@@ -1090,7 +1163,6 @@ class MyKeyboardService : InputMethodService() {
                             startY = e.rawY
                             true
                         } else {
-                            // 2) opcionalno: hover po rectovima (pratimo prst)
                             if (lpRects.isNotEmpty()) {
                                 val rx = e.rawX.toInt()
                                 val ry = e.rawY.toInt()
@@ -1112,7 +1184,6 @@ class MyKeyboardService : InputMethodService() {
                     mainHandler.removeCallbacks(longPressRunnable)
 
                     if (longPressTriggered) {
-                        // pusti -> commit selektirani char
                         lpChars.getOrNull(lpSelectedIndex)?.let { ch ->
                             currentInputConnection?.commitText(ch, 1)
                         }
