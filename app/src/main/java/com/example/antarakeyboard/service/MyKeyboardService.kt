@@ -96,6 +96,8 @@ class MyKeyboardService : InputMethodService() {
         overlayLayer = rootView.findViewById(R.id.keyboardRoot)
         keyboardContainer = rootView.findViewById(R.id.keyboardContainer)
 
+        lastBottomInsetPx = 0
+
         // 3) boja pozadine iz ODABRANE teme
         val bg = keyboardBgColor(themedCtx)
 
@@ -127,14 +129,31 @@ class MyKeyboardService : InputMethodService() {
         val basePadB = overlayLayer.paddingBottom
 
         ViewCompat.setOnApplyWindowInsetsListener(overlayLayer) { v, insets ->
-            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val navInset = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.navigationBars()
+            ).bottom
 
-            if (lastBottomInsetPx != bottomInset) {
-                lastBottomInsetPx = bottomInset
-                v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
+            val tappableInset = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.tappableElement()
+            ).bottom
 
-                v.post {
-                    syncOverlayHeightToContent()
+            val gestureInset = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.systemGestures()
+            ).bottom
+
+            val bottomInset = maxOf(navInset, tappableInset, gestureInset)
+            val insetChanged = lastBottomInsetPx != bottomInset
+
+            lastBottomInsetPx = bottomInset
+
+            // OVO MORA UVIJEK na novom viewu
+            v.setPadding(basePadL, basePadT, basePadR, basePadB + bottomInset)
+
+            v.post {
+                syncOverlayHeightToContent()
+                if (insetChanged) {
+                    redrawKeyboard()
+                } else {
                     overlayLayer.requestLayout()
                 }
             }
@@ -204,7 +223,7 @@ class MyKeyboardService : InputMethodService() {
         val contentH = keyboardContainer.height
         if (contentH <= 0) return
 
-        val extraBottomSafety = dp(10)
+        val extraBottomSafety = dp(16)
 
         val desired = contentH +
                 overlayLayer.paddingTop +
