@@ -6,6 +6,7 @@ import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
 import com.google.gson.Gson
+import com.example.antarakeyboard.ui.defaultNumericLayout
 
 object KeyboardPrefs {
 
@@ -68,6 +69,31 @@ object KeyboardPrefs {
     fun saveLayout(context: Context, layout: KeyboardConfig) {
         val json = gson.toJson(layout)
         prefs(context).edit().putString(KEY_LAYOUT_JSON, json).apply()
+    }
+    fun saveNumericLayout(context: Context, config: KeyboardConfig) {
+        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("numeric_layout_json", gson.toJson(config))
+            .apply()
+    }
+
+    fun loadNumericLayout(context: Context): KeyboardConfig {
+        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
+        val json = prefs.getString("numeric_layout_json", null)
+        return if (json.isNullOrBlank()) {
+            defaultNumericLayout
+        } else {
+            runCatching {
+                gson.fromJson(json, KeyboardConfig::class.java)
+            }.getOrElse {
+                defaultNumericLayout
+            }
+        }
+    }
+
+    fun clearNumericLayout(context: Context) {
+        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("numeric_layout_json").apply()
     }
 
     fun loadLayout(context: Context): KeyboardConfig {

@@ -4,7 +4,8 @@
     android:id="@+id/mainScroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:background="?attr/keyboardBg">
 
     <LinearLayout
         android:id="@+id/mainRoot"
@@ -18,14 +19,14 @@
             android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
             android:text="Antara Keyboard"
             android:textSize="28sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:paddingBottom="12dp"
-            android:paddingTop="12dp"/>
+            android:textStyle="bold" />
 
-        <!-- Enable + Choose (jedan red) -->
+        <!-- Enable + Choose -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -35,60 +36,38 @@
                 android:id="@+id/btnEnableKeyboard"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Enable"
                 app:textAllCaps="false" />
 
             <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_width="12dp"
+                android:layout_height="wrap_content" />
 
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnChooseKeyboard"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Choose"
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Set Layout + Set side buttons (jedan red) -->
-        <LinearLayout
+        <!-- SET LAYOUT - full width -->
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnSetLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="horizontal">
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnSetLayout"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="4"
-                android:text="Set Layout"
-                app:textAllCaps="false" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/btnSetSideButtons"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="4"
-                android:text="Set side buttons"
-                app:textAllCaps="false" />
-        </LinearLayout>
-
-
+            android:layout_marginTop="12dp"
+            android:text="Set Layout"
+            app:textAllCaps="false" />
 
         <!-- Key shape -->
         <TextView
-            android:layout_marginTop="18dp"
+            android:id="@+id/tvKeyShape"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
             android:text="Key shape"
             android:textSize="18sp" />
 
@@ -129,7 +108,7 @@
             android:layout_height="140dp"
             android:layout_marginTop="12dp" />
 
-        <!-- Bind + Reset (jedan red) -->
+        <!-- Bind + Reset -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -140,25 +119,24 @@
                 android:id="@+id/bindLPButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Bind LongPress"
                 app:textAllCaps="false" />
 
             <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_width="12dp"
+                android:layout_height="wrap_content" />
 
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/resetLayoutButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Reset Layout"
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Space + Enter color (jedan red) -->
+        <!-- Space + Enter color -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -169,31 +147,30 @@
                 android:id="@+id/btnSpaceColor"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Space color"
                 app:textAllCaps="false" />
 
             <Space
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
+                android:layout_width="12dp"
+                android:layout_height="wrap_content" />
 
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/btnEnterColor"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="4"
+                android:layout_weight="1"
                 android:text="Enter color"
                 app:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Light / Dark mode -->
+        <!-- Theme toggle -->
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnThemeToggle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="Lightmode / Darkmode"
+            android:text="Switch theme"
             app:textAllCaps="false" />
 
     </LinearLayout>

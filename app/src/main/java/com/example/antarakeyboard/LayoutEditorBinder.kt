@@ -1,6 +1,5 @@
 package com.example.antarakeyboard.ui
 
-import android.app.Dialog
 import android.content.ClipData
 import android.content.Context
 import android.graphics.Typeface
@@ -9,49 +8,50 @@ import android.view.DragEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
-import android.widget.*
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import com.example.antarakeyboard.data.KeyboardPrefs
-import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyConfig
+import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
 
-class UserLayoutDialog(
+class LayoutEditorBinder(
     private val context: Context,
     initial: KeyboardConfig,
-    private val onSaved: (KeyboardConfig) -> Unit
-
+    private val onSaved: (KeyboardConfig) -> Unit,
+    private val lockedLabels: Set<String> = setOf("⇧", "⌫"),
+    private val onEmptyKeyClick: ((KeyConfig) -> Unit)? = null,
+    private val includeSpecialRows: Boolean = true
 ) {
-    private val lockedLabels = setOf("⇧", "⌫")
-    private fun isLocked(key: KeyConfig) = key.label in lockedLabels
-    // radimo na kopiji da ne dira original dok ne stisneš Save
+    private fun isLocked(key: KeyConfig): Boolean = key.label in lockedLabels
+    private fun isEmptyKey(key: KeyConfig): Boolean = key.label.isEmpty()
     private val cfg: KeyboardConfig = deepCopy(initial)
     private val TAG_SHAKE = 987654321
-
-    private var dialog: Dialog? = null
 
     private var keyboardContainer: LinearLayout? = null
 
     private var selectedA: KeyConfig? = null
     private var selectedB: KeyConfig? = null
 
-    // map KeyConfig -> View
     private val keyToView = linkedMapOf<KeyConfig, KeyView>()
-
-    // animacije
     private val shakingViews = mutableListOf<View>()
     private val bounceViews = mutableSetOf<View>()
 
-    fun show() {
-        val d = Dialog(context)
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
+    fun bindInto(container: ViewGroup) {
+        stopAllAnims()
+        container.removeAllViews()
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(10))
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         }
 
-        // naslov
         root.addView(TextView(context).apply {
             text = "Set Layout"
             textSize = 18f
@@ -59,7 +59,6 @@ class UserLayoutDialog(
             setPadding(0, 0, 0, dp(10))
         })
 
-        // scroll + container za tipkovnicu (da ne ode previsoko)
         val scroll = ScrollView(context).apply {
             isFillViewport = true
         }
@@ -84,62 +83,11 @@ class UserLayoutDialog(
             )
         )
 
-        // donji gumbi
-        val bottom = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, 0)
-        }
-
-        val btnSwap = Button(context).apply {
-            text = "Zamijeni"
-            isAllCaps = false
-            setOnClickListener { swapSelected() }
-        }
-
-        val spacer = Space(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
-        }
-
-        val btnSave = Button(context).apply {
-            text = "Spremi"
-            isAllCaps = false
-            setOnClickListener {
-                onSaved(cfg)
-                d.dismiss()
-            }
-        }
-
-        bottom.addView(btnSwap)
-        bottom.addView(spacer)
-        bottom.addView(btnSave)
-        root.addView(bottom)
-
-        d.setContentView(root)
-        d.setCancelable(true)
-
-        dialog = d
+        container.addView(root)
 
         buildKeyboardUI()
         startIdleShake()
-
-        d.setOnDismissListener { stopAllAnims() }
-
-        // tek sad show
-        d.show()
-
-        // i tek nakon show možemo sigurno setLayout
-        d.window?.setLayout(
-            (context.resources.displayMetrics.widthPixels * 0.92f).toInt(),
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        d.window?.setGravity(Gravity.CENTER)
     }
-
-
-    /* -----------------------------
-       BUILD UI
-       ----------------------------- */
 
     private fun buildKeyboardUI() {
         val userShape = KeyboardPrefs.getShape(context)
@@ -153,17 +101,22 @@ class UserLayoutDialog(
         selectedA = null
         selectedB = null
 
-        fun buildRow(keys: List<KeyConfig>) {
+        fun shouldHideInEditor(key: KeyConfig): Boolean {
+            val label = key.label
+            return label == "⇧" || label == "⌫"
+        }
+
+        fun buildRow(keys: MutableList<KeyConfig>) {
+            val visibleKeys = keys.filterNot { shouldHideInEditor(it) }
+            if (visibleKeys.isEmpty()) return
+
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(0, dp(4), 0, dp(4))
             }
 
-            // ✅ NE prikazuj ⇧ i ⌫ u Set Layout popup-u
-            val editableKeys = keys.filterNot { isLocked(it) }
-
-            editableKeys.forEach { key ->
+            visibleKeys.forEach { key ->
                 val kv = createKeyView(key, userShape)
                 row.addView(
                     kv,
@@ -179,57 +132,64 @@ class UserLayoutDialog(
             container.addView(row)
         }
 
+        if (includeSpecialRows && cfg.specialLeft.isNotEmpty()) {
+            buildRow(cfg.specialLeft)
+        }
 
-        if (cfg.specialLeft.isNotEmpty()) buildRow(cfg.specialLeft)
         cfg.rows.forEach { buildRow(it.keys) }
-        if (cfg.specialRight.isNotEmpty()) buildRow(cfg.specialRight)
+
+        if (includeSpecialRows && cfg.specialRight.isNotEmpty()) {
+            buildRow(cfg.specialRight)
+        }
     }
 
     private fun createKeyView(key: KeyConfig, userShape: KeyShape): KeyView {
         return KeyView(context).apply {
-            text = key.label
+            text = when {
+                key.label.isEmpty() -> ""
+                key.label == " " -> "␣"
+                else -> key.label
+            }
+
             gravity = Gravity.CENTER
             textSize = 16f
             includeFontPadding = false
             isAllCaps = false
-
             shape = userShape
-            isSpecial = false
+            isSpecial = (key.label == "↵")
+
+            val locked = isLocked(key)
+            val empty = isEmptyKey(key)
+
             setTextColor(0xFFFFFFFF.toInt())
 
-            val locked = this@UserLayoutDialog.isLocked(key)
-
-            // (opcionalno) vizualno označi locked tipke u editoru
-            if (locked) {
-                alpha = 0.45f
-            } else {
-                alpha = 1f
+            alpha = when {
+                locked -> 0.75f
+                empty -> 0.30f
+                else -> 1f
             }
 
             setOnClickListener {
-                if (!locked) this@UserLayoutDialog.onKeyClicked(key)
+                when {
+                    empty -> onEmptyKeyClick?.invoke(key)
+                    else -> onKeyClicked(key)
+                }
             }
 
             setOnLongClickListener {
-                if (locked) return@setOnLongClickListener false
-                this@UserLayoutDialog.startDragForKey(this, key)
+                if (empty) return@setOnLongClickListener false
+                startDragForKey(this, key)
                 true
             }
 
             setOnDragListener { v, e ->
-                if (locked) return@setOnDragListener false
-                this@UserLayoutDialog.handleDrop(v as KeyView, key, e)
+                handleDrop(v as KeyView, key, e)
             }
         }
     }
 
-
-    /* -----------------------------
-       SELECT + SWAP
-       ----------------------------- */
-
     private fun onKeyClicked(key: KeyConfig) {
-        if (isLocked(key)) return
+        if (isEmptyKey(key)) return
 
         if (selectedA == null || selectedA == key) {
             selectedA = key
@@ -239,22 +199,34 @@ class UserLayoutDialog(
             clearSelection()
             selectedA = key
         }
+
         applySelectionUI()
     }
+    private data class KeyLocation(
+        val row: MutableList<KeyConfig>,
+        val index: Int
+    )
 
-    private fun swapSelected() {
-        val a = selectedA
-        val b = selectedB
-        if (a == null || b == null) {
-            Toast.makeText(context, "Odaberi 2 tipke", Toast.LENGTH_SHORT).show()
-            return
+    private fun findKeyLocation(target: KeyConfig): KeyLocation? {
+        if (includeSpecialRows && cfg.specialLeft.isNotEmpty()) {
+            val i = cfg.specialLeft.indexOf(target)
+            if (i != -1) return KeyLocation(cfg.specialLeft, i)
         }
-        swapKeys(a, b)
-        afterLayoutChanged() // ✅ refresh + odznači
+
+        cfg.rows.forEach { rowCfg ->
+            val i = rowCfg.keys.indexOf(target)
+            if (i != -1) return KeyLocation(rowCfg.keys, i)
+        }
+
+        if (includeSpecialRows && cfg.specialRight.isNotEmpty()) {
+            val i = cfg.specialRight.indexOf(target)
+            if (i != -1) return KeyLocation(cfg.specialRight, i)
+        }
+
+        return null
     }
 
     private fun afterLayoutChanged() {
-        // nakon swap/drag: rebuild + odznači + idle shake
         buildKeyboardUI()
         clearSelection()
     }
@@ -265,13 +237,13 @@ class UserLayoutDialog(
         applySelectionUI()
     }
 
-    private fun swapKeys(a: KeyConfig, b: KeyConfig) {
-        val tmp = a.label
-        a.label = b.label
-        b.label = tmp
+    private fun swapPositions(a: KeyConfig, b: KeyConfig) {
+        val locA = findKeyLocation(a) ?: return
+        val locB = findKeyLocation(b) ?: return
 
-        keyToView[a]?.text = a.label
-        keyToView[b]?.text = b.label
+        val tmp = locA.row[locA.index]
+        locA.row[locA.index] = locB.row[locB.index]
+        locB.row[locB.index] = tmp
     }
 
     private fun applySelectionUI() {
@@ -280,6 +252,7 @@ class UserLayoutDialog(
 
         keyToView.forEach { (key, view) ->
             val isSel = (key == selectedA || key == selectedB)
+
             if (isSel) {
                 view.customBgColor = 0xFFFFFFFF.toInt()
                 view.setTextColor(0xFF000000.toInt())
@@ -289,14 +262,10 @@ class UserLayoutDialog(
                 view.setTextColor(0xFFFFFFFF.toInt())
                 stopBounce(view)
             }
-            view.invalidate()
 
+            view.invalidate()
         }
     }
-
-    /* -----------------------------
-       DRAG & DROP (swap on drop)
-       ----------------------------- */
 
     private fun startDragForKey(view: View, key: KeyConfig) {
         val data = ClipData.newPlainText("key_ref", key.hashCode().toString())
@@ -331,12 +300,12 @@ class UserLayoutDialog(
 
                 val srcView = e.localState as? View ?: return true
                 val srcKey = srcView.tag as? KeyConfig ?: return true
-                if (isLocked(srcKey) || isLocked(targetKey)) return true
 
+                if (isEmptyKey(srcKey) || isEmptyKey(targetKey)) return true
 
                 if (srcKey != targetKey) {
-                    swapKeys(srcKey, targetKey)
-                    afterLayoutChanged() // ✅ rebuild + clear selection
+                    swapPositions(srcKey, targetKey)
+                    afterLayoutChanged()
                 }
                 return true
             }
@@ -348,10 +317,6 @@ class UserLayoutDialog(
         }
         return false
     }
-
-    /* -----------------------------
-       ANIM: idle shake + bounce
-       ----------------------------- */
 
     private fun startIdleShake() {
         if (selectedA != null || selectedB != null) return
@@ -393,7 +358,6 @@ class UserLayoutDialog(
         }
     }
 
-
     private fun stopIdleShake() {
         shakingViews.forEach { v ->
             v.setTag(TAG_SHAKE, false)
@@ -401,7 +365,6 @@ class UserLayoutDialog(
             v.rotation = 0f
         }
     }
-
 
     private fun startBounce(v: View) {
         if (bounceViews.contains(v)) return
@@ -433,17 +396,32 @@ class UserLayoutDialog(
         v.translationY = 0f
     }
 
-    private fun stopAllAnims() {
+    fun stopAllAnims() {
         stopIdleShake()
         keyToView.values.forEach { stopBounce(it) }
         bounceViews.clear()
     }
 
-    /* -----------------------------
-       Utils
-       ----------------------------- */
+    fun swapSelectedExternally(): Boolean {
+        val a = selectedA
+        val b = selectedB
+        if (a == null || b == null) return false
 
-    private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
+        swapPositions(a, b)
+        afterLayoutChanged()
+        return true
+    }
+
+    fun saveExternally() {
+        onSaved(cfg)
+    }
+
+    fun hasTwoSelected(): Boolean {
+        return selectedA != null && selectedB != null
+    }
+
+    private fun dp(v: Int): Int =
+        (v * context.resources.displayMetrics.density).toInt()
 
     private fun deepCopy(src: KeyboardConfig): KeyboardConfig {
         return KeyboardConfig(
@@ -454,8 +432,12 @@ class UserLayoutDialog(
                     }.toMutableList()
                 )
             }.toMutableList(),
-            specialLeft = src.specialLeft.map { it.copy(longPressBindings = it.longPressBindings.toMutableList()) }.toMutableList(),
-            specialRight = src.specialRight.map { it.copy(longPressBindings = it.longPressBindings.toMutableList()) }.toMutableList()
+            specialLeft = src.specialLeft.map {
+                it.copy(longPressBindings = it.longPressBindings.toMutableList())
+            }.toMutableList(),
+            specialRight = src.specialRight.map {
+                it.copy(longPressBindings = it.longPressBindings.toMutableList())
+            }.toMutableList()
         )
     }
 }

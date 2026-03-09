@@ -24,6 +24,9 @@ import com.example.antarakeyboard.SpecialChars
 import android.content.ClipData
 import android.content.ClipDescription
 import android.view.DragEvent
+import com.example.antarakeyboard.ui.LayoutEditorBinder
+import com.example.antarakeyboard.ui.defaultNumericLayout
+import com.example.antarakeyboard.model.KeyboardConfig
 
 class MainActivity : AppCompatActivity() {
     private lateinit var preview: ShapePreviewView
@@ -42,28 +45,25 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("theme_prefs", MODE_PRIVATE)
         val isDark = prefs.getBoolean("dark_mode", true)
 
-        if (isDark) {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-        } else {
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-        }
+        AppCompatDelegate.setDefaultNightMode(
+            if (isDark) AppCompatDelegate.MODE_NIGHT_YES
+            else AppCompatDelegate.MODE_NIGHT_NO
+        )
 
-        // 🔥 OVO MORA BITI PRIJE findViewById
         setContentView(R.layout.activity_main)
 
-        // 🔥 SAD je sigurno
+        // Theme button
         val themeBtn: Button = findViewById(R.id.btnThemeToggle)
 
-        fun applyThemeButtonText(isDark: Boolean) {
-            themeBtn.text = if (isDark) "Switch to Lightmode" else "Switch to Darkmode"
+        fun applyThemeButtonText(isDarkMode: Boolean) {
+            themeBtn.text = if (isDarkMode) {
+                "Switch to Lightmode"
+            } else {
+                "Switch to Darkmode"
+            }
         }
 
         applyThemeButtonText(isDark)
-        val btnSetSideButtons: Button = findViewById(R.id.btnSetSideButtons)
-
-        btnSetSideButtons.setOnClickListener {
-            showEdgeSlotsDialog()
-        }
 
         themeBtn.setOnClickListener {
             val prefs2 = getSharedPreferences("theme_prefs", MODE_PRIVATE)
@@ -73,20 +73,19 @@ class MainActivity : AppCompatActivity() {
             prefs2.edit().putBoolean("dark_mode", newMode).apply()
 
             AppCompatDelegate.setDefaultNightMode(
-                if (newMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+                if (newMode) AppCompatDelegate.MODE_NIGHT_YES
+                else AppCompatDelegate.MODE_NIGHT_NO
             )
 
             applyThemeButtonText(newMode)
         }
 
-
+        // Main buttons
         val btnEnableKeyboard: Button = findViewById(R.id.btnEnableKeyboard)
         val btnChooseKeyboard: Button = findViewById(R.id.btnChooseKeyboard)
+        val btnSetLayout: Button = findViewById(R.id.btnSetLayout)
         val btnSpaceColor: Button = findViewById(R.id.btnSpaceColor)
         val btnEnterColor: Button = findViewById(R.id.btnEnterColor)
-
-        btnSpaceColor.setOnClickListener { showSpaceColorDialog() }
-        btnEnterColor.setOnClickListener { showEnterColorDialog() }
 
         btnEnableKeyboard.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -96,22 +95,20 @@ class MainActivity : AppCompatActivity() {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             imm.showInputMethodPicker()
         }
-        val btnSetLayout: Button = findViewById(R.id.btnSetLayout)
 
         btnSetLayout.setOnClickListener {
-            val cfg = KeyboardPrefs.loadLayout(this)
-            com.example.antarakeyboard.ui.UserLayoutDialog(
-                context = this,
-                initial = cfg
-            ) { updated ->
-                KeyboardPrefs.saveLayout(this, updated)
-                Toast.makeText(this, "Layout saved ✅", Toast.LENGTH_SHORT).show()
-                // KeyboardService će ga povuć čim se tipkovnica sljedeći put prikaže,
-                // a često i odmah kad se vratiš u polje za unos.
-            }.show()
+            openLayoutEditorDialog()
         }
 
+        btnSpaceColor.setOnClickListener {
+            showSpaceColorDialog()
+        }
 
+        btnEnterColor.setOnClickListener {
+            showEnterColorDialog()
+        }
+
+        // Preview + shape
         preview = findViewById(R.id.preview)
 
         hex = findViewById(R.id.hexBtn)
@@ -122,16 +119,27 @@ class MainActivity : AppCompatActivity() {
         bindLPButton = findViewById(R.id.bindLPButton)
         resetLayoutButton = findViewById(R.id.resetLayoutButton)
 
-// Shape init
         val savedShape = KeyboardPrefs.getShape(this)
         preview.shape = savedShape
         setCheckedForShape(savedShape)
 
-        hex.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.HEX) }
-        tri.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.TRIANGLE) }
-        circle.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.CIRCLE) }
-        cube.setOnCheckedChangeListener { _, checked -> if (checked) applyShape(KeyShape.CUBE) }
-        //longpress
+        hex.setOnCheckedChangeListener { _, checked ->
+            if (checked) applyShape(KeyShape.HEX)
+        }
+
+        tri.setOnCheckedChangeListener { _, checked ->
+            if (checked) applyShape(KeyShape.TRIANGLE)
+        }
+
+        circle.setOnCheckedChangeListener { _, checked ->
+            if (checked) applyShape(KeyShape.CIRCLE)
+        }
+
+        cube.setOnCheckedChangeListener { _, checked ->
+            if (checked) applyShape(KeyShape.CUBE)
+        }
+
+        // Long press bind
         bindLPButton.setOnClickListener {
             val cfg = KeyboardPrefs.loadLayout(this)
             LongPressKeyPickerDialog(
@@ -147,6 +155,7 @@ class MainActivity : AppCompatActivity() {
         // Reset
         resetLayoutButton.setOnClickListener {
             KeyboardPrefs.clearLayout(this)
+            KeyboardPrefs.clearNumericLayout(this)
             KeyboardPrefs.setShape(this, KeyShape.HEX)
 
             val keyFill = themeColor(R.attr.keyFill, getColor(R.color.key_fill_light))
@@ -163,7 +172,6 @@ class MainActivity : AppCompatActivity() {
 
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
         }
-
     }
     private fun showEdgeSlotsDialog() {
 
@@ -347,14 +355,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun showSpecialCharPicker(onPicked: (String) -> Unit) {
-        // ✅ ovo je jedino mjesto gdje vučeš znakove
-        // Ako ti se polje/lista ne zove ALL, promijeni u stvarno ime iz SpecialChars fajla.
-        val all = SpecialChars.ALL
+        val all = mutableListOf("∅")
+        all.addAll(SpecialChars.ALL)
 
         AlertDialog.Builder(this)
             .setTitle("Pick a character")
             .setItems(all.toTypedArray()) { _, which ->
-                onPicked(all[which])
+                val picked = all[which]
+                onPicked(if (picked == "∅") "" else picked)
             }
             .show()
     }
@@ -616,7 +624,110 @@ class MainActivity : AppCompatActivity() {
             }
             .show()
     }
+    private fun openLayoutEditorDialog() {
+        val dialog = Dialog(this)
+        dialog.setContentView(R.layout.dialog_layout_editor)
 
+        val btnTabLayout = dialog.findViewById<Button>(R.id.btnTabLayout)
+        val btnTabSideButtons = dialog.findViewById<Button>(R.id.btnTabSideButtons)
+        val btnTabNumeric = dialog.findViewById<Button>(R.id.btnTabNumeric)
+
+        val pageLayout = dialog.findViewById<LinearLayout>(R.id.pageLayout)
+        val pageSideButtons = dialog.findViewById<LinearLayout>(R.id.pageSideButtons)
+        val pageNumeric = dialog.findViewById<LinearLayout>(R.id.pageNumeric)
+
+        val btnSwapSelected = dialog.findViewById<Button>(R.id.btnSwapSelected)
+        val btnSaveEditor = dialog.findViewById<Button>(R.id.btnSaveEditor)
+
+        val layoutBinder = LayoutEditorBinder(
+            context = this,
+            initial = KeyboardPrefs.loadLayout(this),
+            onSaved = { updated: KeyboardConfig ->
+                KeyboardPrefs.saveLayout(this, updated)
+            },
+            includeSpecialRows = false
+        )
+
+        val numericLocked = setOf(
+            "⇧", "⌫", "↵", "ABC", "abc", " ",
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+        )
+
+        lateinit var numericBinder: LayoutEditorBinder
+
+        numericBinder = LayoutEditorBinder(
+            context = this,
+            initial = KeyboardPrefs.loadNumericLayout(this),
+            onSaved = { updated: KeyboardConfig ->
+                KeyboardPrefs.saveNumericLayout(this, updated)
+            },
+            lockedLabels = numericLocked,
+            onEmptyKeyClick = { key ->
+                showSpecialCharPicker { picked ->
+                    key.label = picked
+                    numericBinder.bindInto(pageNumeric)
+                }
+            },
+            includeSpecialRows = false
+        )
+
+        layoutBinder.bindInto(pageLayout)
+        numericBinder.bindInto(pageNumeric)
+
+        val saveSideButtons = setupSideButtonsPage(pageSideButtons)
+        var currentPage = 0
+
+        fun showPage(page: Int) {
+            currentPage = page
+            pageLayout.visibility = if (page == 0) View.VISIBLE else View.GONE
+            pageSideButtons.visibility = if (page == 1) View.VISIBLE else View.GONE
+            pageNumeric.visibility = if (page == 2) View.VISIBLE else View.GONE
+        }
+
+        btnTabLayout.setOnClickListener { showPage(0) }
+        btnTabSideButtons.setOnClickListener { showPage(1) }
+        btnTabNumeric.setOnClickListener { showPage(2) }
+
+        btnSwapSelected.setOnClickListener {
+            val swapped = when (currentPage) {
+                0 -> layoutBinder.swapSelectedExternally()
+                2 -> numericBinder.swapSelectedExternally()
+                else -> false
+            }
+
+            if (!swapped) {
+                Toast.makeText(this, "Označi 2 tipke", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnSaveEditor.setOnClickListener {
+            when (currentPage) {
+                0 -> {
+                    layoutBinder.saveExternally()
+                    Toast.makeText(this, "Layout saved ✅", Toast.LENGTH_SHORT).show()
+                }
+
+                1 -> {
+                    saveSideButtons()
+                    Toast.makeText(this, "Side buttons saved ✅", Toast.LENGTH_SHORT).show()
+                }
+
+                2 -> {
+                    numericBinder.saveExternally()
+                    Toast.makeText(this, "Numeric layout saved ✅", Toast.LENGTH_SHORT).show()
+                }
+            }
+            dialog.dismiss()
+        }
+
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.94f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.9f).toInt()
+        )
+
+        showPage(0)
+    }
     /**
      * HSV(A) picker: Hue/Sat/Value + Alpha
      * Važno: onPicked se zove live, ali prefs spremaš tek na "Save" u parent dialogu.
@@ -686,6 +797,143 @@ class MainActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         }
+
+    private fun setupSideButtonsPage(container: LinearLayout): () -> Unit {
+        container.removeAllViews()
+
+        val title = TextView(this).apply {
+            text = "Set side buttons"
+            textSize = 18f
+            setPadding(0, 0, 0, dp(10))
+        }
+
+        val hint = TextView(this).apply {
+            text = "Tap = change action, long press + drag = swap position"
+            textSize = 13f
+            alpha = 0.75f
+            setPadding(0, 0, 0, dp(10))
+        }
+
+        val grid = GridLayout(this).apply {
+            rowCount = 3
+            columnCount = 2
+        }
+
+        val slots = EdgeSlotsStorage.load(this).toMutableList()
+
+        fun fixedSideForIndex(i: Int): EdgePos.Side =
+            if (i % 2 == 0) EdgePos.Side.LEFT else EdgePos.Side.RIGHT
+
+        fun fixSlotPosition(i: Int, s: EdgeSlot): EdgeSlot =
+            s.copy(index = i, side = fixedSideForIndex(i))
+
+        fun startDragCompat(v: View, fromIndex: Int) {
+            val data = ClipData.newPlainText("fromIndex", fromIndex.toString())
+            val shadow = View.DragShadowBuilder(v)
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                v.startDragAndDrop(data, shadow, null, 0)
+            } else {
+                @Suppress("DEPRECATION")
+                v.startDrag(data, shadow, null, 0)
+            }
+        }
+
+        fun parseFromIndex(e: DragEvent): Int? {
+            val item = e.clipData?.getItemAt(0)?.text?.toString() ?: return null
+            return item.toIntOrNull()
+        }
+
+        fun rebuild() {
+            grid.removeAllViews()
+
+            slots.forEachIndexed { index, slot ->
+                val btn = Button(this).apply {
+                    text = slot.label.ifBlank { "None" }
+                    isAllCaps = false
+                    tag = index
+                    setPadding(dp(8), dp(14), dp(8), dp(14))
+
+                    setOnClickListener {
+                        showEdgeTypePicker(slot) { newSlot ->
+                            val normalized = fixSlotPosition(index, normalizeSlot(newSlot))
+                            enforceNoDuplicates(slots, index, normalized)
+                            slots[index] = normalized
+                            rebuild()
+                        }
+                    }
+
+                    setOnLongClickListener { v ->
+                        startDragCompat(v, index)
+                        true
+                    }
+
+                    setOnDragListener { v, e ->
+                        when (e.action) {
+                            DragEvent.ACTION_DRAG_STARTED -> {
+                                e.clipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true
+                            }
+
+                            DragEvent.ACTION_DRAG_ENTERED -> {
+                                v.alpha = 0.65f
+                                true
+                            }
+
+                            DragEvent.ACTION_DRAG_EXITED -> {
+                                v.alpha = 1f
+                                true
+                            }
+
+                            DragEvent.ACTION_DROP -> {
+                                v.alpha = 1f
+
+                                val from = parseFromIndex(e) ?: return@setOnDragListener true
+                                val to = (v.tag as? Int) ?: return@setOnDragListener true
+                                if (from == to) return@setOnDragListener true
+
+                                val tmp = slots[from]
+                                slots[from] = slots[to]
+                                slots[to] = tmp
+
+                                slots[from] = fixSlotPosition(from, slots[from])
+                                slots[to] = fixSlotPosition(to, slots[to])
+
+                                rebuild()
+                                true
+                            }
+
+                            DragEvent.ACTION_DRAG_ENDED -> {
+                                v.alpha = 1f
+                                true
+                            }
+
+                            else -> true
+                        }
+                    }
+                }
+
+                val lp = GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    columnSpec = GridLayout.spec(index % 2, 1f)
+                    rowSpec = GridLayout.spec(index / 2)
+                    setMargins(dp(6), dp(6), dp(6), dp(6))
+                }
+
+                grid.addView(btn, lp)
+            }
+        }
+
+        rebuild()
+
+        container.addView(title)
+        container.addView(hint)
+        container.addView(grid)
+
+        return {
+            EdgeSlotsStorage.save(this, slots)
+        }
+    }
 
 
 

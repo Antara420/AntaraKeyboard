@@ -64,7 +64,7 @@ class MyKeyboardService : InputMethodService() {
     private lateinit var themedCtx: Context
 
     private val myDefaultNumericConfig: KeyboardConfig
-        get() = defaultNumericLayout
+        get() = KeyboardPrefs.loadNumericLayout(this)
 
     private val OVERLAP_RATIO = 0.18f
 
