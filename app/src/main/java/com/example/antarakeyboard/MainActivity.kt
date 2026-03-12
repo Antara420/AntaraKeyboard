@@ -27,6 +27,7 @@ import android.view.DragEvent
 import com.example.antarakeyboard.ui.LayoutEditorBinder
 import com.example.antarakeyboard.ui.defaultNumericLayout
 import com.example.antarakeyboard.model.KeyboardConfig
+import com.example.antarakeyboard.ui.LongPressEditorBinder
 
 class MainActivity : AppCompatActivity() {
     private lateinit var preview: ShapePreviewView
@@ -141,15 +142,7 @@ class MainActivity : AppCompatActivity() {
 
         // Long press bind
         bindLPButton.setOnClickListener {
-            val cfg = KeyboardPrefs.loadLayout(this)
-            LongPressKeyPickerDialog(
-                context = this,
-                cfg = cfg,
-                onSave = { updated ->
-                    KeyboardPrefs.saveLayout(this, updated)
-                    Toast.makeText(this, "Long press saved ✅", Toast.LENGTH_SHORT).show()
-                }
-            ).show()
+            openLongPressEditorDialog()
         }
 
         // Reset
@@ -316,6 +309,127 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun openLongPressEditorDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_longpress_editor)
+
+        val btnTabAlphabet = dialog.findViewById<Button>(R.id.btnTabAlphabetLp)
+        val btnTabNumeric = dialog.findViewById<Button>(R.id.btnTabNumericLp)
+        val btnSave = dialog.findViewById<Button>(R.id.btnSaveLongPressEditor)
+
+        val pageAlphabet = dialog.findViewById<LinearLayout>(R.id.pageAlphabetLp)
+        val pageNumeric = dialog.findViewById<LinearLayout>(R.id.pageNumericLp)
+
+        val alphabetBinder = LongPressEditorBinder(
+            context = this,
+            initial = KeyboardPrefs.loadLayout(this),
+            titleText = "Bind long press - alphabet"
+        )
+
+        val numericBinder = LongPressEditorBinder(
+            context = this,
+            initial = KeyboardPrefs.loadNumericLayout(this),
+            titleText = "Bind long press - numeric",
+            lockedLabels = setOf("⇧", "⌫", "↵", "ABC", "abc", " ")
+        )
+
+        alphabetBinder.bindInto(pageAlphabet)
+        numericBinder.bindInto(pageNumeric)
+
+        fun showPage(page: Int) {
+            pageAlphabet.visibility = if (page == 0) View.VISIBLE else View.GONE
+            pageNumeric.visibility = if (page == 1) View.VISIBLE else View.GONE
+        }
+
+        btnTabAlphabet.setOnClickListener { showPage(0) }
+        btnTabNumeric.setOnClickListener { showPage(1) }
+
+        btnSave.setOnClickListener {
+            KeyboardPrefs.saveLayout(this, alphabetBinder.getUpdatedConfig())
+            KeyboardPrefs.saveNumericLayout(this, numericBinder.getUpdatedConfig())
+            Toast.makeText(this, "Long press saved ✅", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.92f).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+
+        showPage(0)
+    }
+
+    private fun setupAlphabetLongPressPage(
+        container: LinearLayout,
+        cfg: KeyboardConfig
+    ) {
+        container.removeAllViews()
+
+        val title = TextView(this).apply {
+            text = "Bind long press - alphabet"
+            textSize = 18f
+            setPadding(0, 0, 0, dp(10))
+        }
+
+        val btnOpen = Button(this).apply {
+            text = "Odaberi tipku"
+            isAllCaps = false
+            setOnClickListener {
+                LongPressKeyPickerDialog(
+                    context = this@MainActivity,
+                    cfg = cfg,
+                    onSave = { updated ->
+                        cfg.rows.clear()
+                        cfg.rows.addAll(updated.rows)
+                        cfg.specialLeft.clear()
+                        cfg.specialLeft.addAll(updated.specialLeft)
+                        cfg.specialRight.clear()
+                        cfg.specialRight.addAll(updated.specialRight)
+                    }
+                ).show()
+            }
+        }
+
+        container.addView(title)
+        container.addView(btnOpen)
+    }
+
+    private fun setupNumericLongPressPage(
+        container: LinearLayout,
+        cfg: KeyboardConfig
+    ) {
+        container.removeAllViews()
+
+        val title = TextView(this).apply {
+            text = "Bind long press - numeric"
+            textSize = 18f
+            setPadding(0, 0, 0, dp(10))
+        }
+
+        val btnOpen = Button(this).apply {
+            text = "Odaberi tipku"
+            isAllCaps = false
+            setOnClickListener {
+                LongPressKeyPickerDialog(
+                    context = this@MainActivity,
+                    cfg = cfg,
+                    onSave = { updated ->
+                        cfg.rows.clear()
+                        cfg.rows.addAll(updated.rows)
+                        cfg.specialLeft.clear()
+                        cfg.specialLeft.addAll(updated.specialLeft)
+                        cfg.specialRight.clear()
+                        cfg.specialRight.addAll(updated.specialRight)
+                    }
+                ).show()
+            }
+        }
+
+        container.addView(title)
+        container.addView(btnOpen)
+    }
 
     private fun normalizeSlot(s: EdgeSlot): EdgeSlot {
         return when (s.type) {
@@ -644,8 +758,7 @@ class MainActivity : AppCompatActivity() {
             initial = KeyboardPrefs.loadLayout(this),
             onSaved = { updated: KeyboardConfig ->
                 KeyboardPrefs.saveLayout(this, updated)
-            },
-            includeSpecialRows = false
+            }
         )
 
         val numericLocked = setOf(
@@ -668,7 +781,7 @@ class MainActivity : AppCompatActivity() {
                     numericBinder.bindInto(pageNumeric)
                 }
             },
-            includeSpecialRows = false
+            allowClearKeys = true
         )
 
         layoutBinder.bindInto(pageLayout)

@@ -8,14 +8,14 @@ import android.view.DragEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import com.example.antarakeyboard.data.KeyboardPrefs
 import com.example.antarakeyboard.model.KeyConfig
-import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.model.KeyShape
+import com.example.antarakeyboard.model.KeyboardConfig
 
 class LayoutEditorBinder(
     private val context: Context,
@@ -23,10 +23,10 @@ class LayoutEditorBinder(
     private val onSaved: (KeyboardConfig) -> Unit,
     private val lockedLabels: Set<String> = setOf("⇧", "⌫"),
     private val onEmptyKeyClick: ((KeyConfig) -> Unit)? = null,
-    private val includeSpecialRows: Boolean = true
-) {
+    private val allowClearKeys: Boolean = false
+){
     private fun isLocked(key: KeyConfig): Boolean = key.label in lockedLabels
-    private fun isEmptyKey(key: KeyConfig): Boolean = key.label.isEmpty()
+    private fun isEmptyKey(key: KeyConfig): Boolean = key.label == ""
     private val cfg: KeyboardConfig = deepCopy(initial)
     private val TAG_SHAKE = 987654321
 
@@ -101,13 +101,12 @@ class LayoutEditorBinder(
         selectedA = null
         selectedB = null
 
-        fun shouldHideInEditor(key: KeyConfig): Boolean {
-            val label = key.label
-            return label == "⇧" || label == "⌫"
-        }
+        fun buildRow(keys: MutableList<KeyConfig>, rowIndex: Int) {
+            val visibleKeys = keys.filterIndexed { index, _ ->
+                // U editoru skrivamo "bočne" tipke iz 3. reda
+                !(rowIndex == 2 && (index == 0 || index == keys.lastIndex))
+            }
 
-        fun buildRow(keys: MutableList<KeyConfig>) {
-            val visibleKeys = keys.filterNot { shouldHideInEditor(it) }
             if (visibleKeys.isEmpty()) return
 
             val row = LinearLayout(context).apply {
@@ -117,54 +116,47 @@ class LayoutEditorBinder(
             }
 
             visibleKeys.forEach { key ->
-                val kv = createKeyView(key, userShape)
+                val keyItem = createKeyView(key, userShape)
                 row.addView(
-                    kv,
+                    keyItem,
                     LinearLayout.LayoutParams(0, dp(56), 1f).apply {
                         marginStart = dp(1)
                         marginEnd = dp(1)
                     }
                 )
-                keyToView[key] = kv
-                shakingViews.add(kv)
             }
 
             container.addView(row)
         }
 
-        if (includeSpecialRows && cfg.specialLeft.isNotEmpty()) {
-            buildRow(cfg.specialLeft)
-        }
-
-        cfg.rows.forEach { buildRow(it.keys) }
-
-        if (includeSpecialRows && cfg.specialRight.isNotEmpty()) {
-            buildRow(cfg.specialRight)
+        cfg.rows.forEachIndexed { rowIndex, rowCfg ->
+            buildRow(rowCfg.keys, rowIndex)
         }
     }
 
-    private fun createKeyView(key: KeyConfig, userShape: KeyShape): KeyView {
-        return KeyView(context).apply {
-            text = when {
-                key.label.isEmpty() -> ""
-                key.label == " " -> "␣"
-                else -> key.label
-            }
+    private fun createKeyView(key: KeyConfig, userShape: KeyShape): View {
+        val locked = isLocked(key)
+        val empty = isEmptyKey(key)
 
+        val wrapper = FrameLayout(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56)
+            )
+        }
+
+        val keyView = KeyView(context).apply {
+            text = if (key.label.isBlank()) "" else key.label
             gravity = Gravity.CENTER
             textSize = 16f
             includeFontPadding = false
             isAllCaps = false
             shape = userShape
             isSpecial = (key.label == "↵")
-
-            val locked = isLocked(key)
-            val empty = isEmptyKey(key)
-
             setTextColor(0xFFFFFFFF.toInt())
 
             alpha = when {
-                locked -> 0.75f
+                locked -> 0.55f
                 empty -> 0.30f
                 else -> 1f
             }
@@ -177,7 +169,6 @@ class LayoutEditorBinder(
             }
 
             setOnLongClickListener {
-                if (empty) return@setOnLongClickListener false
                 startDragForKey(this, key)
                 true
             }
@@ -186,7 +177,52 @@ class LayoutEditorBinder(
                 handleDrop(v as KeyView, key, e)
             }
         }
+
+        wrapper.addView(
+            keyView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        keyToView[key] = keyView
+        shakingViews.add(keyView)
+
+        if (allowClearKeys && !locked && !empty) {
+            val clearBtn = TextView(context).apply {
+                text = "×"
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                setBackgroundColor(0x66000000)
+                setPadding(dp(4), dp(1), dp(4), dp(1))
+                isClickable = true
+                isFocusable = false
+
+                setOnClickListener {
+                    key.label = ""
+                    afterLayoutChanged()
+                }
+            }
+
+            wrapper.addView(
+                clearBtn,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.END
+                ).apply {
+                    topMargin = dp(2)
+                    marginEnd = dp(2)
+                }
+            )
+        }
+
+        return wrapper
     }
+
+
 
     private fun onKeyClicked(key: KeyConfig) {
         if (isEmptyKey(key)) return
@@ -208,19 +244,9 @@ class LayoutEditorBinder(
     )
 
     private fun findKeyLocation(target: KeyConfig): KeyLocation? {
-        if (includeSpecialRows && cfg.specialLeft.isNotEmpty()) {
-            val i = cfg.specialLeft.indexOf(target)
-            if (i != -1) return KeyLocation(cfg.specialLeft, i)
-        }
-
         cfg.rows.forEach { rowCfg ->
             val i = rowCfg.keys.indexOf(target)
             if (i != -1) return KeyLocation(rowCfg.keys, i)
-        }
-
-        if (includeSpecialRows && cfg.specialRight.isNotEmpty()) {
-            val i = cfg.specialRight.indexOf(target)
-            if (i != -1) return KeyLocation(cfg.specialRight, i)
         }
 
         return null
