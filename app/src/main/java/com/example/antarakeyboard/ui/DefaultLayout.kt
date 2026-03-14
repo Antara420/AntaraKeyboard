@@ -21,7 +21,7 @@ val defaultKeyboardLayout: KeyboardConfig = KeyboardConfig(
             KeyConfig("g"), KeyConfig("u"), KeyConfig("l"), KeyConfig("p")
         )),
 
-        // 3) ⇧ . space f h space ? ⌫
+        // 3) side . space f h space ? side
         RowConfig(mutableListOf(
             KeyConfig("⇧"), KeyConfig("."), KeyConfig(" "),
             KeyConfig("f"), KeyConfig("h"), KeyConfig(" "),
@@ -73,7 +73,7 @@ val defaultNumericLayout: KeyboardConfig = KeyboardConfig(
             KeyConfig("6"), KeyConfig("7"), KeyConfig("("), KeyConfig(")")
         )),
 
-        // 3) ⇧ . space 8 9 space ? ⌫
+        // 3) side . space 8 9 space ? side
         RowConfig(mutableListOf(
             KeyConfig("⇧"), KeyConfig("."), KeyConfig(" "),
             KeyConfig("8"), KeyConfig("9"), KeyConfig(" "),

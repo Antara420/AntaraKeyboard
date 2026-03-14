@@ -29,6 +29,7 @@ class LayoutEditorBinder(
     private fun isEmptyKey(key: KeyConfig): Boolean = key.label == ""
     private val cfg: KeyboardConfig = deepCopy(initial)
     private val TAG_SHAKE = 987654321
+    private val USER_EMPTY_MARKER = "__USER_EMPTY__"
 
     private var keyboardContainer: LinearLayout? = null
 
@@ -202,6 +203,8 @@ class LayoutEditorBinder(
 
                 setOnClickListener {
                     key.label = ""
+                    key.longPressBindings.clear()
+                    key.longPressBindings.add(USER_EMPTY_MARKER)
                     afterLayoutChanged()
                 }
             }

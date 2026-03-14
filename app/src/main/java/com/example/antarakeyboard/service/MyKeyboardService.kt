@@ -101,6 +101,8 @@ class MyKeyboardService : InputMethodService() {
 
     private val LIVE_REPLACE = false
     private var lpHasLiveInserted = false
+    private val EDGE_GHOST_MARKER = "__EDGE_GHOST__"
+    private val USER_EMPTY_MARKER = "__USER_EMPTY__"
 
     /* ───────── LIFECYCLE ───────── */
 
@@ -672,38 +674,52 @@ class MyKeyboardService : InputMethodService() {
 
     private fun applyEdgeKeys(cfg: KeyboardConfig): KeyboardConfig {
         val copy = cfg.copy(
-            rows = cfg.rows.map { it.copy(keys = it.keys.toMutableList()) }.toMutableList(),
-            specialLeft = cfg.specialLeft.toMutableList(),
-            specialRight = cfg.specialRight.toMutableList()
+            rows = cfg.rows.map { row ->
+                row.copy(
+                    keys = row.keys.map { key ->
+                        key.copy(longPressBindings = key.longPressBindings.toMutableList())
+                    }.toMutableList()
+                )
+            }.toMutableList(),
+            specialLeft = cfg.specialLeft.map {
+                it.copy(longPressBindings = it.longPressBindings.toMutableList())
+            }.toMutableList(),
+            specialRight = cfg.specialRight.map {
+                it.copy(longPressBindings = it.longPressBindings.toMutableList())
+            }.toMutableList()
         )
 
         val slots = EdgeSlotsStorage.load(this).filter { it.type != EdgeActionType.NONE }
         if (slots.isEmpty()) return copy
 
-        val removeLabels = buildSet<String> {
+        val labelsToHideFromMainLayout = buildSet<String> {
             slots.forEach { s ->
                 when (s.type) {
                     EdgeActionType.SHIFT -> add("⇧")
                     EdgeActionType.BACKSPACE -> add("⌫")
                     EdgeActionType.ENTER -> add("↵")
-                    EdgeActionType.SPACE -> add(" ")
-                    EdgeActionType.CHAR -> {
-                        if (s.label.isNotBlank()) add(s.label)
-                        val v = s.value
-                        if (!v.isNullOrBlank()) add(v)
-                    }
+                    EdgeActionType.SPACE -> Unit
+                    EdgeActionType.CHAR -> Unit
                     EdgeActionType.NONE -> Unit
                 }
             }
         }
 
-        fun strip(list: MutableList<KeyConfig>) {
-            list.removeAll { it.label in removeLabels }
+        fun replaceWithGhostPlaceholder(list: MutableList<KeyConfig>) {
+            for (i in list.indices) {
+                val key = list[i]
+                if (key.label in labelsToHideFromMainLayout) {
+                    list[i] = key.copy(
+                        label = "",
+                        longPressBindings = mutableListOf(EDGE_GHOST_MARKER)
+                    )
+                }
+            }
         }
 
-        copy.rows.forEach { strip(it.keys) }
-        strip(copy.specialLeft)
-        strip(copy.specialRight)
+        copy.rows.forEach { replaceWithGhostPlaceholder(it.keys) }
+        replaceWithGhostPlaceholder(copy.specialLeft)
+        replaceWithGhostPlaceholder(copy.specialRight)
 
         return copy
     }
@@ -1026,10 +1042,14 @@ class MyKeyboardService : InputMethodService() {
             var spaceIndex = 0
 
             fun buildRow(keys: List<KeyConfig>, containerRowIndex: Int) {
-                if (keys.isEmpty()) return
+                val rowKeys = keys.filterNot { key ->
+                    key.longPressBindings.contains(EDGE_GHOST_MARKER)
+                }
+
+                if (rowKeys.isEmpty()) return
 
                 val availW = availableKeyboardWidthPx()
-                val sizing = computeRowSizing(keys.size, availW)
+                val sizing = computeRowSizing(rowKeys.size, availW)
 
                 val vPad = when (currentShape) {
                     KeyShape.TRIANGLE -> 0
@@ -1044,17 +1064,17 @@ class MyKeyboardService : InputMethodService() {
                     clipToPadding = false
                 }
 
-                keys.forEachIndexed { i, key ->
+                rowKeys.forEachIndexed { i, key ->
                     val kv = createKey(key)
 
                     if (currentShape == KeyShape.TRIANGLE) {
                         kv.triangleFlipped = (i % 2 == 1)
                     }
 
-                    if (kv.text.toString() == " ") {
-                        val linked = KeyboardPrefs.isSpaceLinked(this)
-                        val c1 = KeyboardPrefs.getSpace1Bg(this)
-                        val c2 = if (linked) c1 else KeyboardPrefs.getSpace2Bg(this)
+                    if (key.label == " ") {
+                        val linked = KeyboardPrefs.isSpaceLinked(this@MyKeyboardService)
+                        val c1 = KeyboardPrefs.getSpace1Bg(this@MyKeyboardService)
+                        val c2 = if (linked) c1 else KeyboardPrefs.getSpace2Bg(this@MyKeyboardService)
                         kv.customBgColor = if (spaceIndex == 0) c1 else c2
                         spaceIndex++
                     }
@@ -1377,16 +1397,45 @@ class MyKeyboardService : InputMethodService() {
         val label = keyConfig.label
 
         if (label.isEmpty()) {
+            val isEdgeGhost = keyConfig.longPressBindings.contains(EDGE_GHOST_MARKER)
+            val isUserEmpty = keyConfig.longPressBindings.contains(USER_EMPTY_MARKER)
+
             text = ""
             isAllCaps = false
             shape = currentShape
             gravity = Gravity.CENTER
             isClickable = false
             isFocusable = false
-            alpha = 0.12f
-            customBgColor = keyboardBgColor(themedCtx)
+
+            when {
+                isEdgeGhost -> {
+                    hideCompletely = true
+                    alpha = 0f
+                    customBgColor = android.graphics.Color.TRANSPARENT
+                }
+
+                isUserEmpty -> {
+                    hideCompletely = false
+                    alpha = 0.65f
+                    customBgColor = themeColor(
+                        this@MyKeyboardService,
+                        R.attr.keyFill,
+                        0xFF4A4A4A.toInt()
+
+                    )
+                }
+
+                else -> {
+                    hideCompletely = true
+                    alpha = 0f
+                    customBgColor = android.graphics.Color.TRANSPARENT
+                }
+            }
+
             return@apply
         }
+
+        hideCompletely = false
 
         val display = if (label.length == 1 && label[0].isLetter()) {
             if (isShifted) label.uppercase() else label.lowercase()

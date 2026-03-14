@@ -39,6 +39,9 @@ class KeyView @JvmOverloads constructor(
     var forceSquare: Boolean = true
         set(value) { field = value; requestLayout() }
 
+    var hideCompletely: Boolean = false
+        set(value) { field = value; invalidate() }
+
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -95,6 +98,8 @@ class KeyView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
+        if (hideCompletely) return
+
         val w = width.toFloat()
         val h = height.toFloat()
         if (w <= 2f || h <= 2f) {

@@ -28,6 +28,7 @@ import com.example.antarakeyboard.ui.LayoutEditorBinder
 import com.example.antarakeyboard.ui.defaultNumericLayout
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.ui.LongPressEditorBinder
+import com.example.antarakeyboard.ui.defaultKeyboardLayout
 
 class MainActivity : AppCompatActivity() {
     private lateinit var preview: ShapePreviewView
@@ -147,8 +148,15 @@ class MainActivity : AppCompatActivity() {
 
         // Reset
         resetLayoutButton.setOnClickListener {
+
+            // obriši spremljene layoutove
             KeyboardPrefs.clearLayout(this)
             KeyboardPrefs.clearNumericLayout(this)
+
+            // vrati default layout
+            KeyboardPrefs.saveLayout(this, defaultKeyboardLayout)
+            KeyboardPrefs.saveNumericLayout(this, defaultNumericLayout)
+
             KeyboardPrefs.setShape(this, KeyShape.HEX)
 
             val keyFill = themeColor(R.attr.keyFill, getColor(R.color.key_fill_light))
@@ -778,6 +786,7 @@ class MainActivity : AppCompatActivity() {
             onEmptyKeyClick = { key ->
                 showSpecialCharPicker { picked ->
                     key.label = picked
+                    key.longPressBindings.remove("__USER_EMPTY__")
                     numericBinder.bindInto(pageNumeric)
                 }
             },
