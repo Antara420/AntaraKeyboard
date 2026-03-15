@@ -27,17 +27,7 @@ class ShapePreviewView @JvmOverloads constructor(
     }
 
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        when (shape) {
-            KeyShape.HEX -> drawHex(canvas)
-            KeyShape.TRIANGLE -> drawTriangle(canvas)
-            KeyShape.CIRCLE -> drawCircle(canvas)
-            KeyShape.CUBE -> drawCube(canvas)
-        }
 
-
-    }
 
 
     private fun drawHex(c: Canvas) {

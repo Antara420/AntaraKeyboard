@@ -26,6 +26,14 @@ class KeyView @JvmOverloads constructor(
             applyTextColor()   // ✅ special text color
             invalidate()
         }
+    var hideStroke: Boolean = false
+        set(value) { field = value; invalidate() }
+
+    var hideFill: Boolean = false
+        set(value) { field = value; invalidate() }
+
+    var manualLabelSizeSp: Float? = null
+        set(value) { field = value; invalidate() }
 
     /** Ako nije null, pregazi normal/special fill */
     var customBgColor: Int? = null
@@ -49,6 +57,10 @@ class KeyView @JvmOverloads constructor(
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = false
+    }
     private fun applyThemeColors() {
         // boje iz teme (Light/Dark koje ti biraš u serviceu)
         fill.color = themeColor(R.attr.keyFill, 0xFF777777.toInt())
@@ -71,6 +83,9 @@ class KeyView @JvmOverloads constructor(
         setPadding(0, 0, 0, 0)
         isAllCaps = false
         applyTextColor()
+        maxLines = 1
+        ellipsize = null
+        setTextColor(themeColor(R.attr.keyText, 0xFFFFFFFF.toInt()))
     }
 
     /** Bitno: da pressed state odmah precrta fill */
@@ -89,7 +104,13 @@ class KeyView @JvmOverloads constructor(
         }
         setTextColor(c)
     }
-
+    private fun resolvedTextColor(): Int {
+        return if (isSpecial) {
+            themeColor(R.attr.enterText, 0xFFFFFFFF.toInt())
+        } else {
+            currentTextColor
+        }
+    }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         if (!forceSquare) return
@@ -140,15 +161,61 @@ class KeyView @JvmOverloads constructor(
         path.reset()
         when (shape) {
             KeyShape.HEX -> buildHex(path, l, t, r, b)
+            KeyShape.HEX_HALF_LEFT -> buildHalfHexLeft(path, l, t, r, b)
+            KeyShape.HEX_HALF_RIGHT -> buildHalfHexRight(path, l, t, r, b)
             KeyShape.TRIANGLE -> buildTriangle(path, l, t, r, b, triangleFlipped)
             KeyShape.CIRCLE -> buildCircle(path, l, t, r, b)
             KeyShape.CUBE -> buildCubeFront(path, l, t, r, b)
         }
 
         canvas.drawPath(path, fill)
-        canvas.drawPath(path, stroke)
+        if (!hideFill) {
+            canvas.drawPath(path, fill)
+        }
+        if (!hideStroke) {
+            canvas.drawPath(path, stroke)
+        }
 
-        super.onDraw(canvas)
+        drawKeyLabel(canvas, l, t, r, b)
+    }
+
+    private fun drawKeyLabel(canvas: Canvas, l: Float, t: Float, r: Float, b: Float) {
+        val label = text?.toString().orEmpty()
+        if (label.isEmpty()) return
+
+        textPaint.color = resolvedTextColor()
+
+        val sizeSp = manualLabelSizeSp ?: when {
+            label.length == 1 -> {
+                when (shape) {
+                    KeyShape.HEX,
+                    KeyShape.HEX_HALF_LEFT,
+                    KeyShape.HEX_HALF_RIGHT -> 15f
+
+                    KeyShape.TRIANGLE -> 14f
+                    KeyShape.CIRCLE -> 15f
+                    KeyShape.CUBE -> 15f
+                }
+            }
+
+            label in setOf("⇧", "⌫", "↵", "123", "ABC", "abc") -> 13f
+            else -> 12f
+        }
+
+        textPaint.textSize = sizeSp * resources.displayMetrics.scaledDensity
+
+        val baseCx = (l + r) * 0.5f
+        val cx = when (shape) {
+            KeyShape.HEX_HALF_LEFT -> baseCx + (r - l) * 0.10f
+            KeyShape.HEX_HALF_RIGHT -> baseCx - (r - l) * 0.10f
+            else -> baseCx
+        }
+        val cy = (t + b) * 0.5f
+
+        val fm = textPaint.fontMetrics
+        val baseline = cy - (fm.ascent + fm.descent) / 2f
+
+        canvas.drawText(label, cx, baseline, textPaint)
     }
 
     /** Pointy-top hex koji ispuni kvadrat maksimalno */
@@ -158,7 +225,7 @@ class KeyView @JvmOverloads constructor(
         val cx = l + w * 0.5f
         val cy = t + h * 0.5f
 
-        val radius = min(w, h) * 0.52f
+        val radius = min(w, h) * 0.48f
         val dx = 0.8660254f * radius // sqrt(3)/2
         val dy = 0.5f * radius
 
@@ -168,6 +235,33 @@ class KeyView @JvmOverloads constructor(
         p.lineTo(cx, cy + radius)
         p.lineTo(cx - dx, cy + dy)
         p.lineTo(cx - dx, cy - dy)
+        p.close()
+    }
+    private fun buildHalfHexLeft(p: Path, l: Float, t: Float, r: Float, b: Float) {
+        val w = r - l
+        val h = b - t
+        val cy = t + h * 0.5f
+        val insetX = w * 0.18f
+
+        p.moveTo(r, t)
+        p.lineTo(r, b)
+        p.lineTo(l + insetX, b)
+        p.lineTo(l, cy)
+        p.lineTo(l + insetX, t)
+        p.close()
+    }
+
+    private fun buildHalfHexRight(p: Path, l: Float, t: Float, r: Float, b: Float) {
+        val w = r - l
+        val h = b - t
+        val cy = t + h * 0.5f
+        val insetX = w * 0.18f
+
+        p.moveTo(l, t)
+        p.lineTo(r - insetX, t)
+        p.lineTo(r, cy)
+        p.lineTo(r - insetX, b)
+        p.lineTo(l, b)
         p.close()
     }
 
@@ -197,6 +291,7 @@ class KeyView @JvmOverloads constructor(
         val rr = min(w, h) * 0.14f
         p.addRoundRect(l + pad, t + pad, r - pad, b - pad, rr, rr, Path.Direction.CW)
     }
+
 
     private fun dpF(v: Float): Float = v * resources.displayMetrics.density
 }
