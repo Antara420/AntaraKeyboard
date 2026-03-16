@@ -536,6 +536,7 @@ class MainActivity : AppCompatActivity() {
             EdgeActionType.BACKSPACE to "⌫ Backspace",
             EdgeActionType.ENTER to "↵ Enter",
             EdgeActionType.SPACE to "␣ Space",
+            EdgeActionType.EMOJI_PICKER to "😊 Emoji picker",
             EdgeActionType.NONE to "None"
         )
 

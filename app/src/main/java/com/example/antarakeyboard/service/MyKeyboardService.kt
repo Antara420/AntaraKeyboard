@@ -38,6 +38,8 @@ import com.example.antarakeyboard.ui.KeyView
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
 import kotlin.math.max
 import kotlin.math.roundToInt
+import android.widget.ScrollView
+import com.example.antarakeyboard.EmojiData
 
 class MyKeyboardService : InputMethodService() {
 
@@ -102,7 +104,7 @@ class MyKeyboardService : InputMethodService() {
     private var lpHasLiveInserted = false
     private val EDGE_GHOST_MARKER = "__EDGE_GHOST__"
     private val USER_EMPTY_MARKER = "__USER_EMPTY__"
-
+    private var emojiPopup: PopupWindow? = null
     /* ───────── LIFECYCLE ───────── */
 
     override fun onCreateInputView(): View {
@@ -253,6 +255,7 @@ class MyKeyboardService : InputMethodService() {
         stopSwipeDelete()
         stopSwipeRestore()
         stopBackspaceHold()
+        hideEmojiPopup()
 
         currentDeleteBatch.clear()
         isDeleteGestureActive = false
@@ -268,6 +271,150 @@ class MyKeyboardService : InputMethodService() {
     }
 
     /* ───────── HELPERS ───────── */
+    private fun isAlphabetLayoutActive(): Boolean {
+        return currentKeyboardConfig.rows.any { row ->
+            row.keys.any { key ->
+                key.label.length == 1 && key.label[0].isLetter()
+            }
+        }
+    }
+
+    private fun hideEmojiPopup() {
+        emojiPopup?.dismiss()
+        emojiPopup = null
+    }
+    private fun showEmojiPicker() {
+        hideLongPressPopup()
+        hideEmojiPopup()
+
+        val popupWidth = (availableKeyboardWidthPx() * 0.92f).toInt()
+        val popupHeight = (computeTargetKeyboardHeight() * 0.78f).toInt()
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setBackgroundColor(0xFF1E1E1E.toInt())
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val title = TextView(this).apply {
+            text = "Emoji"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+        }
+
+        val closeBtn = TextView(this).apply {
+            text = "✕"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setOnClickListener {
+                hideEmojiPopup()
+            }
+        }
+
+        header.addView(
+            title,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+
+        header.addView(
+            closeBtn,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+        }
+
+        val grid = GridLayout(this).apply {
+            columnCount = 5
+            useDefaultMargins = false
+            alignmentMode = GridLayout.ALIGN_BOUNDS
+        }
+
+        EmojiData.basic.forEach { emoji ->
+            val btn = Button(this).apply {
+                text = emoji
+                isAllCaps = false
+                textSize = 24f
+                setPadding(0, 0, 0, 0)
+                setOnClickListener {
+                    currentInputConnection?.commitText(emoji, 1)
+                }
+            }
+
+            val lp = GridLayout.LayoutParams().apply {
+                width = 0
+                height = dp(52)
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            }
+
+            grid.addView(btn, lp)
+        }
+
+        scroll.addView(
+            grid,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        root.addView(
+            header,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        )
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val popup = PopupWindow(
+            root,
+            popupWidth,
+            popupHeight,
+            true
+        ).apply {
+            isOutsideTouchable = true
+            isFocusable = true
+            elevation = dp(10).toFloat()
+            setBackgroundDrawable(ColorDrawable(0xCC000000.toInt()))
+            setOnDismissListener {
+                emojiPopup = null
+            }
+        }
+
+        emojiPopup = popup
+
+        val x = ((overlayLayer.width - popupWidth) / 2).coerceAtLeast(dp(8))
+        val y = ((overlayLayer.height - popupHeight) / 2).coerceAtLeast(dp(8))
+
+        popup.showAtLocation(overlayLayer, Gravity.NO_GRAVITY, x, y)
+    }
     private fun landscapeHalfKeyWidthPx(keySize: Int, isLeft: Boolean): Int {
         return when (currentShape) {
             KeyShape.HEX,
@@ -728,6 +875,7 @@ class MyKeyboardService : InputMethodService() {
                     EdgeActionType.ENTER -> add("↵")
                     EdgeActionType.SPACE -> Unit
                     EdgeActionType.CHAR -> Unit
+                    EdgeActionType.EMOJI_PICKER -> Unit
                     EdgeActionType.NONE -> Unit
                 }
             }
@@ -1288,6 +1436,7 @@ class MyKeyboardService : InputMethodService() {
             EdgeActionType.ENTER -> sendEnter()
             EdgeActionType.SPACE -> currentInputConnection?.commitText(" ", 1)
             EdgeActionType.CHAR -> slot.value?.let { currentInputConnection?.commitText(it, 1) }
+            EdgeActionType.EMOJI_PICKER -> showEmojiPicker()
             EdgeActionType.NONE -> Unit
         }
     }
@@ -1752,6 +1901,7 @@ class MyKeyboardService : InputMethodService() {
                     EdgeActionType.ENTER -> "↵"
                     EdgeActionType.SPACE -> " "
                     EdgeActionType.CHAR -> slot.value ?: return null
+                    EdgeActionType.EMOJI_PICKER -> "😊"
                     EdgeActionType.NONE -> return null
                 }
 
@@ -1962,6 +2112,8 @@ class MyKeyboardService : InputMethodService() {
         var startX = 0f
         var startY = 0f
         val step = dp(18)
+        var handledBySwipeUp = false
+        val swipeUpThreshold = dp(26)
 
         val longPressRunnable = Runnable {
             if (label in nonBindable) return@Runnable
@@ -1982,6 +2134,7 @@ class MyKeyboardService : InputMethodService() {
                     startX = e.rawX
                     startY = e.rawY
                     longPressTriggered = false
+                    handledBySwipeUp = false
                     hideLongPressPopup()
 
                     mainHandler.removeCallbacks(longPressRunnable)
@@ -1999,6 +2152,21 @@ class MyKeyboardService : InputMethodService() {
                     val dy = e.rawY - startY
                     val absDx = kotlin.math.abs(dx)
                     val absDy = kotlin.math.abs(dy)
+
+                    if (!longPressTriggered &&
+                        !handledBySwipeUp &&
+                        label == "123" &&
+                        isAlphabetLayoutActive() &&
+                        dy < -swipeUpThreshold &&
+                        absDy > absDx
+                    ) {
+                        handledBySwipeUp = true
+                        mainHandler.removeCallbacks(longPressRunnable)
+                        hideLongPressPopup()
+                        showEmojiPicker()
+                        v.isPressed = false
+                        return@setOnTouchListener true
+                    }
 
                     if (!longPressTriggered && absDx > dp(20) && absDx > absDy * 1.05f) {
                         mainHandler.removeCallbacks(longPressRunnable)
@@ -2030,6 +2198,12 @@ class MyKeyboardService : InputMethodService() {
                 }
 
                 MotionEvent.ACTION_UP -> {
+                    if (handledBySwipeUp) {
+                        v.isPressed = false
+                        mainHandler.removeCallbacks(longPressRunnable)
+                        return@setOnTouchListener true
+                    }
+
                     v.performClick()
                     mainHandler.removeCallbacks(longPressRunnable)
 
@@ -2053,6 +2227,7 @@ class MyKeyboardService : InputMethodService() {
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+                    handledBySwipeUp = false
                     mainHandler.removeCallbacks(longPressRunnable)
 
                     if (longPressTriggered) {

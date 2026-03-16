@@ -3,7 +3,7 @@ package com.example.antarakeyboard.model
 import com.example.antarakeyboard.data.EdgePos
 
 enum class EdgeActionType {
-    SHIFT, BACKSPACE, ENTER, SPACE, CHAR, NONE
+    SHIFT, BACKSPACE, ENTER, SPACE, CHAR, NONE, EMOJI_PICKER
 }
 
 data class EdgeSlot(
@@ -13,12 +13,14 @@ data class EdgeSlot(
     val value: String? = null
 ) {
     val label: String
-        get() = when (type) {
-            EdgeActionType.SHIFT -> "⇧"
-            EdgeActionType.BACKSPACE -> "⌫"
-            EdgeActionType.ENTER -> "↵"
-            EdgeActionType.SPACE -> "␣"
-            EdgeActionType.CHAR -> value ?: "?"
-            EdgeActionType.NONE -> ""
-        }
+        get() =
+            when (type) {
+                EdgeActionType.SHIFT -> "⇧"
+                EdgeActionType.BACKSPACE -> "⌫"
+                EdgeActionType.ENTER -> "↵"
+                EdgeActionType.SPACE -> "␣"
+                EdgeActionType.CHAR -> value ?: "?"
+                EdgeActionType.EMOJI_PICKER -> "😊"
+                EdgeActionType.NONE -> ""
+            }
 }
