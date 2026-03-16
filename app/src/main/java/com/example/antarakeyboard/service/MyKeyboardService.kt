@@ -72,6 +72,7 @@ class MyKeyboardService : InputMethodService() {
     private var targetKeyboardHeightPx: Int = 0
 
     lateinit var inputController: KeyInputController
+    private var landscapeSpaceIndex = 0
 
     private var lpRects: List<android.graphics.Rect> = emptyList()
     private var lpChars: List<String> = emptyList()
@@ -270,7 +271,28 @@ class MyKeyboardService : InputMethodService() {
     }
 
     /* ───────── HELPERS ───────── */
+    private fun landscapeHalfKeyWidthPx(keySize: Int, isLeft: Boolean): Int {
+        return when (currentShape) {
+            KeyShape.HEX,
+            KeyShape.HEX_HALF_LEFT,
+            KeyShape.HEX_HALF_RIGHT -> if (isLeft) {
+                (keySize * 0.53f).toInt()
+            } else {
+                (keySize * 0.60f).toInt()
+            }
 
+            KeyShape.TRIANGLE -> (keySize * 0.72f).toInt()
+            KeyShape.CIRCLE -> (keySize * 0.82f).toInt()
+            KeyShape.CUBE -> (keySize * 0.82f).toInt()
+        }
+    }
+
+    private fun landscapeKeyGapPx(): Int = when (currentShape) {
+        KeyShape.TRIANGLE -> dp(0)
+        KeyShape.CIRCLE -> dp(2)
+        KeyShape.CUBE -> dp(2)
+        else -> dp(2)
+    }
 
 
     private fun themeColor(ctx: Context, attr: Int, fallback: Int): Int {
@@ -1455,6 +1477,8 @@ class MyKeyboardService : InputMethodService() {
 
     /* ───────── KEY VIEW ───────── */
     private fun buildLandscapeLayout() {
+        landscapeSpaceIndex = 0
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1463,11 +1487,11 @@ class MyKeyboardService : InputMethodService() {
 
         val leftContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                2.15f
+                2.2f
             )
         }
 
@@ -1475,22 +1499,21 @@ class MyKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
-                0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                2.7f
+                ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(4)
+                leftMargin = dp(8)
+                rightMargin = dp(8)
             }
         }
 
         val rightContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                2.15f
+                2.2f
             )
         }
 
@@ -1523,12 +1546,34 @@ class MyKeyboardService : InputMethodService() {
             forceSquare = false
             minWidth = 0
             minimumWidth = 0
-            manualLabelSizeSp = 16f
+            manualLabelSizeSp = 22f
         }
     }
+
+    private fun landscapeKeySizePx(): Int = when (currentShape) {
+        KeyShape.HEX,
+        KeyShape.HEX_HALF_LEFT,
+        KeyShape.HEX_HALF_RIGHT -> dp(42)
+
+        KeyShape.TRIANGLE -> dp(40)
+        KeyShape.CIRCLE -> dp(38)
+        KeyShape.CUBE -> dp(35)
+    }
+    private fun landscapeRowOverlapPx(keySize: Int): Int = when (currentShape) {
+        KeyShape.HEX,
+        KeyShape.HEX_HALF_LEFT,
+        KeyShape.HEX_HALF_RIGHT -> (keySize * 0.25f).toInt()
+
+        KeyShape.TRIANGLE -> (keySize * 0.18f).toInt()
+        KeyShape.CIRCLE -> dp(4)
+        KeyShape.CUBE -> dp(4)
+    }
     private fun buildLandscapeLeftLetters(container: LinearLayout) {
-        val keySize = dp(42)
-        val rowOverlap = (keySize * 0.24f).toInt()
+        val keySize = landscapeKeySizePx()
+        val rowOverlap = landscapeRowOverlapPx(keySize)
+        val keyGap = landscapeKeyGapPx()
+        val halfStep = (keySize / 2f).toInt()
+
         currentKeyboardConfig.rows.forEachIndexed { rowIndex, row ->
             val keys = leftLandscapeKeysForRow(row.keys, rowIndex)
             if (keys.isEmpty()) return@forEachIndexed
@@ -1540,43 +1585,65 @@ class MyKeyboardService : InputMethodService() {
                 clipToPadding = false
             }
 
-            leftHalfKeyForLandscapeRow(rowIndex)?.let { halfKey ->
-                val kv = createSideKey(halfKey, isLeft = true)
-                val lp = LinearLayout.LayoutParams(
-                    (keySize * 0.60f).toInt(),
-                    keySize
-                ).apply {
-                    rightMargin = dp(2)
-                }
-                rowLayout.addView(kv, lp)
-            }
-            keys.forEachIndexed { i, key ->
-                val kv = createKey(key)
-                val lp = LinearLayout.LayoutParams(keySize, keySize).apply {
-                    if (i > 0 || isOddLandscapeRow(rowIndex)) {
-                        leftMargin = dp(2)
-                    }
-                }
-                rowLayout.addView(kv, lp)
-            }
-
             val rowLp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                if (!isOddLandscapeRow(rowIndex)) {
-                    leftMargin = dp(14)
-                }
                 if (rowIndex > 0) topMargin = -rowOverlap
+
+                // honeycomb pomak: svaki drugi red ide pola tipke udesno
+                leftMargin = if (rowIndex > 0 && isOddLandscapeRow(rowIndex)) halfStep else 0
+            }
+
+            leftHalfKeyForLandscapeRow(rowIndex)?.let { halfKey ->
+                val kv = createSideKey(halfKey, isLeft = true)
+                landscapeSpaceIndex = applySpecialKeyColors(kv, halfKey, landscapeSpaceIndex)
+
+                if (currentShape == KeyShape.TRIANGLE) {
+                    kv.triangleFlipped = false
+                }
+
+                val lp = LinearLayout.LayoutParams(
+                    landscapeHalfKeyWidthPx(keySize, isLeft = true),
+                    keySize
+                ).apply {
+                    rightMargin = keyGap
+                }
+
+                rowLayout.addView(kv, lp)
+            }
+
+            val startIndex = 0
+
+            keys.forEachIndexed { i, key ->
+                val kv = createKey(key)
+                landscapeSpaceIndex = applySpecialKeyColors(kv, key, landscapeSpaceIndex)
+
+                if (currentShape == KeyShape.TRIANGLE) {
+                    kv.triangleFlipped = ((startIndex + i) % 2 == 1)
+                }
+
+                val lp = LinearLayout.LayoutParams(keySize, keySize).apply {
+                    if (i > 0) leftMargin = keyGap
+                }
+
+                rowLayout.addView(kv, lp)
             }
 
             container.addView(rowLayout, rowLp)
         }
     }
     private fun buildLandscapeRightLetters(container: LinearLayout) {
-        val keySize = dp(42)
-        val rowOverlap = (keySize * 0.24f).toInt()
+        val keySize = landscapeKeySizePx()
+        val rowOverlap = landscapeRowOverlapPx(keySize)
+        val keyGap = landscapeKeyGapPx()
+        val halfStep = (keySize / 2f).toInt()
+
         currentKeyboardConfig.rows.forEachIndexed { rowIndex, row ->
+            val visibleRow = row.keys.filterNot {
+                it.longPressBindings.contains(EDGE_GHOST_MARKER)
+            }
+
             val keys = rightLandscapeKeysForRow(row.keys, rowIndex)
             if (keys.isEmpty()) return@forEachIndexed
 
@@ -1587,38 +1654,59 @@ class MyKeyboardService : InputMethodService() {
                 clipToPadding = false
             }
 
+            val takeCount = if (isOddLandscapeRow(rowIndex)) 3 else 4
+            val startIndex = (visibleRow.size - takeCount).coerceAtLeast(0)
+
             keys.forEachIndexed { i, key ->
                 val kv = createKey(key)
-                val lp = LinearLayout.LayoutParams(keySize, keySize).apply {
-                    if (i > 0) leftMargin = dp(2)
+                landscapeSpaceIndex = applySpecialKeyColors(kv, key, landscapeSpaceIndex)
+
+                if (currentShape == KeyShape.TRIANGLE) {
+                    kv.triangleFlipped = ((startIndex + i) % 2 == 1)
                 }
+
+                val lp = LinearLayout.LayoutParams(keySize, keySize).apply {
+                    if (i > 0) leftMargin = keyGap
+                }
+
                 rowLayout.addView(kv, lp)
             }
 
             rightHalfKeyForLandscapeRow(rowIndex)?.let { halfKey ->
                 val kv = createSideKey(halfKey, isLeft = false)
+                landscapeSpaceIndex = applySpecialKeyColors(kv, halfKey, landscapeSpaceIndex)
+
+                if (currentShape == KeyShape.TRIANGLE) {
+                    kv.triangleFlipped = (takeCount % 2 == 1)
+                }
+
                 val lp = LinearLayout.LayoutParams(
-                    (keySize * 0.60f).toInt(),
+                    landscapeHalfKeyWidthPx(keySize, isLeft = false),
                     keySize
                 ).apply {
-                    leftMargin = dp(2)
+                    leftMargin = keyGap
                 }
+
                 rowLayout.addView(kv, lp)
             }
+
             val rowLp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                if (!isOddLandscapeRow(rowIndex)) {
-                    rightMargin = dp(14)
-                }
-                gravity = Gravity.END
                 if (rowIndex > 0) topMargin = -rowOverlap
+
+                rightMargin = if (rowIndex > 0 && isOddLandscapeRow(rowIndex)) halfStep else 0
+
+                if (rowIndex == 0) {
+                    rightMargin = -dp(4)
+                }
             }
 
             container.addView(rowLayout, rowLp)
         }
     }
+
     private fun buildLandscapeCenter(container: LinearLayout) {
         val rows = listOf(
             listOf("#", "?", "!", "@", "1", "2", "3"),
@@ -1628,12 +1716,14 @@ class MyKeyboardService : InputMethodService() {
         )
 
         val keySize = dp(28)
-        val rowGap = dp(7)
+        val rowGap = dp(6)
 
         rows.forEachIndexed { rowIndex, row ->
             val rowLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                clipChildren = false
+                clipToPadding = false
             }
 
             row.forEachIndexed { i, label ->
@@ -1654,7 +1744,6 @@ class MyKeyboardService : InputMethodService() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 if (rowIndex > 0) topMargin = rowGap
-                gravity = Gravity.CENTER_HORIZONTAL
 
                 when (rowIndex) {
                     1 -> leftMargin = dp(8)
@@ -1710,13 +1799,23 @@ class MyKeyboardService : InputMethodService() {
     private fun isOddLandscapeRow(rowIndex: Int): Boolean {
         return rowIndex % 2 == 0
     }
-    private fun leftLandscapeKeysForRow(rowKeys: List<KeyConfig>, rowIndex: Int): List<KeyConfig> {
-        val visible = rowKeys.filterNot { it.longPressBindings.contains(EDGE_GHOST_MARKER) }
+    private fun leftLandscapeKeysForRow(
+        rowKeys: List<KeyConfig>,
+        rowIndex: Int
+    ): List<KeyConfig> {
+        val visible = rowKeys.filterNot {
+            it.longPressBindings.contains(EDGE_GHOST_MARKER)
+        }
         val takeCount = if (isOddLandscapeRow(rowIndex)) 3 else 4
         return visible.take(takeCount)
     }
-    private fun rightLandscapeKeysForRow(rowKeys: List<KeyConfig>, rowIndex: Int): List<KeyConfig> {
-        val visible = rowKeys.filterNot { it.longPressBindings.contains(EDGE_GHOST_MARKER) }
+    private fun rightLandscapeKeysForRow(
+        rowKeys: List<KeyConfig>,
+        rowIndex: Int
+    ): List<KeyConfig> {
+        val visible = rowKeys.filterNot {
+            it.longPressBindings.contains(EDGE_GHOST_MARKER)
+        }
         val takeCount = if (isOddLandscapeRow(rowIndex)) 3 else 4
         return visible.takeLast(takeCount)
     }
@@ -1919,8 +2018,14 @@ class MyKeyboardService : InputMethodService() {
                         v.isPressed = false
                         true
                     } else {
-                        inputController.handleTouch(v as TextView, e)
-                        true
+                        if (label == "⇧") {
+                            v.isPressed = false
+                            toggleShift()
+                            true
+                        } else {
+                            inputController.handleTouch(v as TextView, e)
+                            true
+                        }
                     }
                 }
 
