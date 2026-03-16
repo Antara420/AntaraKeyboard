@@ -7,6 +7,7 @@ import com.example.antarakeyboard.model.KeyShape
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
 import com.google.gson.Gson
 import com.example.antarakeyboard.ui.defaultNumericLayout
+import com.example.antarakeyboard.ui.defaultHorizontalCenterLayout
 
 object KeyboardPrefs {
 
@@ -15,6 +16,8 @@ object KeyboardPrefs {
     private const val KEY_SCALE = "key_scale"
     private const val KEY_SHAPE = "key_shape"
     private const val KEY_LAYOUT_JSON = "layout_json"
+    private const val KEY_NUMERIC_LAYOUT_JSON = "numeric_layout_json"
+    private const val KEY_HORIZONTAL_CENTER_LAYOUT_JSON = "horizontal_center_layout_json"
     private const val KEY_HEIGHT_PX = "key_height_px"
 
     // Space colors
@@ -64,22 +67,40 @@ object KeyboardPrefs {
         prefs(context).edit().putString(KEY_SHAPE, shape.name).apply()
     }
 
-    /* ───────── LAYOUT ───────── */
+    /* ───────── ALPHABET LAYOUT ───────── */
 
     fun saveLayout(context: Context, layout: KeyboardConfig) {
         val json = gson.toJson(layout)
         prefs(context).edit().putString(KEY_LAYOUT_JSON, json).apply()
     }
+
+    fun loadLayout(context: Context): KeyboardConfig {
+        val json = prefs(context).getString(KEY_LAYOUT_JSON, null)
+        return if (!json.isNullOrBlank()) {
+            runCatching {
+                gson.fromJson(json, KeyboardConfig::class.java)
+            }.getOrElse {
+                defaultKeyboardLayout
+            }
+        } else {
+            defaultKeyboardLayout
+        }
+    }
+
+    fun clearLayout(context: Context) {
+        prefs(context).edit().remove(KEY_LAYOUT_JSON).apply()
+    }
+
+    /* ───────── NUMERIC LAYOUT ───────── */
+
     fun saveNumericLayout(context: Context, config: KeyboardConfig) {
-        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString("numeric_layout_json", gson.toJson(config))
+        prefs(context).edit()
+            .putString(KEY_NUMERIC_LAYOUT_JSON, gson.toJson(config))
             .apply()
     }
 
     fun loadNumericLayout(context: Context): KeyboardConfig {
-        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-        val json = prefs.getString("numeric_layout_json", null)
+        val json = prefs(context).getString(KEY_NUMERIC_LAYOUT_JSON, null)
         return if (json.isNullOrBlank()) {
             defaultNumericLayout
         } else {
@@ -92,21 +113,32 @@ object KeyboardPrefs {
     }
 
     fun clearNumericLayout(context: Context) {
-        val prefs = context.getSharedPreferences("keyboard_prefs", Context.MODE_PRIVATE)
-        prefs.edit().remove("numeric_layout_json").apply()
+        prefs(context).edit().remove(KEY_NUMERIC_LAYOUT_JSON).apply()
     }
 
-    fun loadLayout(context: Context): KeyboardConfig {
-        val json = prefs(context).getString(KEY_LAYOUT_JSON, null)
-        return if (!json.isNullOrBlank()) {
-            gson.fromJson(json, KeyboardConfig::class.java)
+    /* ───────── HORIZONTAL CENTER LAYOUT ───────── */
+
+    fun saveHorizontalCenterLayout(context: Context, config: KeyboardConfig) {
+        prefs(context).edit()
+            .putString(KEY_HORIZONTAL_CENTER_LAYOUT_JSON, gson.toJson(config))
+            .apply()
+    }
+
+    fun loadHorizontalCenterLayout(context: Context): KeyboardConfig {
+        val json = prefs(context).getString(KEY_HORIZONTAL_CENTER_LAYOUT_JSON, null)
+        return if (json.isNullOrBlank()) {
+            defaultHorizontalCenterLayout
         } else {
-            defaultKeyboardLayout
+            runCatching {
+                gson.fromJson(json, KeyboardConfig::class.java)
+            }.getOrElse {
+                defaultHorizontalCenterLayout
+            }
         }
     }
 
-    fun clearLayout(context: Context) {
-        prefs(context).edit().remove(KEY_LAYOUT_JSON).apply()
+    fun clearHorizontalCenterLayout(context: Context) {
+        prefs(context).edit().remove(KEY_HORIZONTAL_CENTER_LAYOUT_JSON).apply()
     }
 
     /* ───────── SPACE COLORS ───────── */
@@ -132,7 +164,6 @@ object KeyboardPrefs {
         prefs(context).edit().putInt(SPACE2_BG, color).apply()
     }
 
-    /** Helper: spremi oba + linked flag odjednom */
     fun setSpaceColors(context: Context, c1: Int, c2: Int, linked: Boolean) {
         prefs(context).edit()
             .putInt(SPACE1_BG, c1)
@@ -144,10 +175,11 @@ object KeyboardPrefs {
     /* ───────── ENTER COLORS ───────── */
 
     fun getEnterBg(context: Context): Int =
-        prefs(context).getInt(ENTER_BG, 0xFF2E55E7.toInt()) // default plava
+        prefs(context).getInt(ENTER_BG, 0xFF2E55E7.toInt())
 
     fun getEnterIcon(context: Context): Int =
-        prefs(context).getInt(ENTER_ICON, 0xFFFFFFFF.toInt()) // default bijelo
+        prefs(context).getInt(ENTER_ICON, 0xFFFFFFFF.toInt())
+
     fun setEnterBg(context: Context, color: Int) {
         prefs(context).edit().putInt(ENTER_BG, color).apply()
     }

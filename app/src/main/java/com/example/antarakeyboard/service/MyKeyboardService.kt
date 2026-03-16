@@ -1648,26 +1648,29 @@ class MyKeyboardService : InputMethodService() {
     }
 
     private fun buildLandscapeCenter(container: LinearLayout) {
-        val rows = listOf(
-            listOf(".", "|", ",", "÷", "{", "}", "0"),
-            listOf("#", "?", "!", "@", "1", "2", "3"),
-            listOf("+", "-", "%", "&", "4", "5", "6"),
-            listOf( "~", "*", "€", "$", "7", "8", "9"),
-        )
+        val cfg = KeyboardPrefs.loadHorizontalCenterLayout(this)
 
         val keySize = dp(28)
         val rowGap = dp(6)
 
-        rows.forEachIndexed { rowIndex, row ->
+        cfg.rows.forEachIndexed { rowIndex, rowConfig ->
+            val rowKeys = rowConfig.keys.filter { key ->
+                key.label.isNotBlank() &&
+                        !key.longPressBindings.contains("__USER_EMPTY__") &&
+                        !key.longPressBindings.contains(EDGE_GHOST_MARKER)
+            }
+
+            if (rowKeys.isEmpty()) return@forEachIndexed
+
             val rowLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                gravity = Gravity.CENTER
                 clipChildren = false
                 clipToPadding = false
             }
 
-            row.forEachIndexed { i, label ->
-                val kv = createCenterTextKey(label)
+            rowKeys.forEachIndexed { i, key ->
+                val kv = createCenterTextKey(key.label)
 
                 val lp = LinearLayout.LayoutParams(
                     keySize,
@@ -1683,9 +1686,9 @@ class MyKeyboardService : InputMethodService() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                if (rowIndex > 0) topMargin = rowGap
+                if (container.childCount > 0) topMargin = rowGap
 
-                when (rowIndex) {
+                when (container.childCount) {
                     1 -> leftMargin = dp(8)
                     3 -> leftMargin = dp(14)
                 }

@@ -29,6 +29,8 @@ import com.example.antarakeyboard.ui.defaultNumericLayout
 import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.ui.LongPressEditorBinder
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
+import com.example.antarakeyboard.ui.defaultHorizontalCenterLayout
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var preview: ShapePreviewView
@@ -148,6 +150,8 @@ class MainActivity : AppCompatActivity() {
 
         // Reset
         resetLayoutButton.setOnClickListener {
+            KeyboardPrefs.clearHorizontalCenterLayout(this)
+            KeyboardPrefs.saveHorizontalCenterLayout(this, defaultHorizontalCenterLayout)
 
             // obriši spremljene layoutove
             KeyboardPrefs.clearLayout(this)
@@ -746,13 +750,94 @@ class MainActivity : AppCompatActivity() {
             }
             .show()
     }
+    private fun openHorizontalCenterEditorDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(12))
+        }
+
+        val title = TextView(this).apply {
+            text = "Horizontal center keys"
+            textSize = 18f
+            setPadding(0, 0, 0, dp(12))
+        }
+
+        val editorContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        val btnSave = Button(this).apply {
+            text = "Spremi"
+            isAllCaps = false
+        }
+
+        root.addView(title)
+        root.addView(editorContainer)
+        root.addView(
+            btnSave,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(12)
+            }
+        )
+
+        dialog.setContentView(root)
+
+        lateinit var horizontalBinder: LayoutEditorBinder
+
+        horizontalBinder = LayoutEditorBinder(
+            context = this,
+            initial = KeyboardPrefs.loadHorizontalCenterLayout(this),
+            onSaved = { updated: KeyboardConfig ->
+                KeyboardPrefs.saveHorizontalCenterLayout(this, updated)
+            },
+            lockedLabels = emptySet(),
+            onEmptyKeyClick = { key ->
+                showSpecialCharPicker { picked ->
+                    key.label = picked
+                    key.longPressBindings.remove("__USER_EMPTY__")
+                    horizontalBinder.bindInto(editorContainer)
+                }
+            },
+            allowClearKeys = true
+        )
+
+        horizontalBinder.bindInto(editorContainer)
+
+        btnSave.setOnClickListener {
+            horizontalBinder.saveExternally()
+            Toast.makeText(this, "Horizontal center saved ✅", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+
+        dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.94f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82f).toInt()
+        )
+    }
+
     private fun openLayoutEditorDialog() {
         val dialog = Dialog(this)
         dialog.setContentView(R.layout.dialog_layout_editor)
 
+        val layoutEditorContainer = dialog.findViewById<FrameLayout>(R.id.layoutEditorContainer)
+        val numericEditorContainer = dialog.findViewById<FrameLayout>(R.id.numericEditorContainer)
+
         val btnTabLayout = dialog.findViewById<Button>(R.id.btnTabLayout)
         val btnTabSideButtons = dialog.findViewById<Button>(R.id.btnTabSideButtons)
         val btnTabNumeric = dialog.findViewById<Button>(R.id.btnTabNumeric)
+        val btnEditHorizontalCenter = dialog.findViewById<Button>(R.id.btnEditHorizontalCenter)
 
         val pageLayout = dialog.findViewById<LinearLayout>(R.id.pageLayout)
         val pageSideButtons = dialog.findViewById<LinearLayout>(R.id.pageSideButtons)
@@ -787,14 +872,14 @@ class MainActivity : AppCompatActivity() {
                 showSpecialCharPicker { picked ->
                     key.label = picked
                     key.longPressBindings.remove("__USER_EMPTY__")
-                    numericBinder.bindInto(pageNumeric)
+                    numericBinder.bindInto(numericEditorContainer)
                 }
             },
             allowClearKeys = true
         )
 
-        layoutBinder.bindInto(pageLayout)
-        numericBinder.bindInto(pageNumeric)
+        layoutBinder.bindInto(layoutEditorContainer)
+        numericBinder.bindInto(numericEditorContainer)
 
         val saveSideButtons = setupSideButtonsPage(pageSideButtons)
         var currentPage = 0
@@ -809,6 +894,10 @@ class MainActivity : AppCompatActivity() {
         btnTabLayout.setOnClickListener { showPage(0) }
         btnTabSideButtons.setOnClickListener { showPage(1) }
         btnTabNumeric.setOnClickListener { showPage(2) }
+
+        btnEditHorizontalCenter.setOnClickListener {
+            openHorizontalCenterEditorDialog()
+        }
 
         btnSwapSelected.setOnClickListener {
             val swapped = when (currentPage) {

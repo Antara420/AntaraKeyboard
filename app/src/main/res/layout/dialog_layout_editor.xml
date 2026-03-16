@@ -10,48 +10,72 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
-        <Button
-            android:id="@+id/btnTabLayout"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Layout"
-            android:textAllCaps="false"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:gravity="center" />
+            android:orientation="horizontal">
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="wrap_content" />
+            <Button
+                android:id="@+id/btnTabLayout"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Layout"
+                android:textAllCaps="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:gravity="center" />
 
-        <Button
-            android:id="@+id/btnTabSideButtons"
-            android:layout_width="0dp"
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/btnTabSideButtons"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Side buttons"
+                android:textAllCaps="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:gravity="center" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Side buttons"
-            android:textAllCaps="false"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:gravity="center" />
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="wrap_content" />
+            <Button
+                android:id="@+id/btnTabNumeric"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Numeric"
+                android:textAllCaps="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:gravity="center" />
 
-        <Button
-            android:id="@+id/btnTabNumeric"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Numeric"
-            android:textAllCaps="false"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:gravity="center" />
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="wrap_content" />
+
+            <Button
+                android:id="@+id/btnEditHorizontalCenter"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Horizontal"
+                android:textAllCaps="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:gravity="center" />
+        </LinearLayout>
     </LinearLayout>
 
     <FrameLayout
@@ -74,7 +98,8 @@
                 android:text="Set Layout"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:paddingBottom="12dp" />
+                android:paddingBottom="12dp" />fun showPage(page: Int) {
+
 
             <FrameLayout
                 android:id="@+id/layoutEditorContainer"
