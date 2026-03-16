@@ -36,7 +36,6 @@ import com.example.antarakeyboard.model.KeyShape
 import com.example.antarakeyboard.service.input.KeyInputController
 import com.example.antarakeyboard.ui.KeyView
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
-import com.example.antarakeyboard.ui.defaultNumericLayout
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -55,7 +54,6 @@ class MyKeyboardService : InputMethodService() {
     private val swipeEditHandler = Handler(Looper.getMainLooper())
     private val backspaceHoldHandler = Handler(Looper.getMainLooper())
 
-    private var previewPopup: PopupWindow? = null
     private var longPressPopup: PopupWindow? = null
 
     private lateinit var rootView: View
@@ -263,7 +261,6 @@ class MyKeyboardService : InputMethodService() {
         restoreProgressIndex = 0
 
         hideLongPressPopup()
-        hideKeyPreview()
     }
 
     private fun recreateInputView() {
@@ -618,8 +615,6 @@ class MyKeyboardService : InputMethodService() {
 
     /* ───────── INPUT API for Controller ───────── */
 
-    fun showPreview(view: TextView) { /* disabled */ }
-    fun hidePreview() { /* disabled */ }
     fun scheduleBackspaceHold() {
         cancelPendingBackspaceHold()
 
@@ -701,35 +696,7 @@ class MyKeyboardService : InputMethodService() {
         currentInputConnection?.commitText(out, 1)
     }
 
-    /* ───────── PREVIEW ───────── */
 
-    private fun showKeyPreview(view: TextView) {
-        hideKeyPreview()
-        val tv = TextView(this).apply {
-            text = view.text
-            textSize = 28f
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
-        }
-
-        tv.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        previewPopup = PopupWindow(tv, tv.measuredWidth, tv.measuredHeight, false)
-
-        val loc = IntArray(2)
-        view.getLocationOnScreen(loc)
-
-        previewPopup?.showAtLocation(
-            overlayLayer,
-            Gravity.NO_GRAVITY,
-            loc[0] + view.width / 2 - tv.measuredWidth / 2,
-            loc[1] - tv.measuredHeight - dp(10)
-        )
-    }
-
-    private fun hideKeyPreview() {
-        previewPopup?.dismiss()
-        previewPopup = null
-    }
 
     /* ───────── EDGE KEYS ───────── */
 
@@ -1135,10 +1102,13 @@ class MyKeyboardService : InputMethodService() {
                     for (i in 0 until overlayLayer.childCount) {
                         val v = overlayLayer.getChildAt(i)
                         val tag = v.tag?.toString() ?: continue
-                        if (tag.startsWith("edge_icon_")) toRemove.add(v)
+                        if (tag.startsWith("edge_icon_") || tag.startsWith("landscape_side_btn_")) {
+                            toRemove.add(v)
+                        }
                     }
                     toRemove.forEach { overlayLayer.removeView(it) }
 
+                    drawLandscapeSideButtons()
                     isDrawing = false
                 }
                 return@post
@@ -1399,7 +1369,7 @@ class MyKeyboardService : InputMethodService() {
                         else edgeIconTextColor(themedCtx)
                     )
 
-                    textSize = (boxH * 0.28f / resources.displayMetrics.scaledDensity)
+                    textSize = (boxH * 0.28f / resources.configuration.fontScale)
                         .coerceIn(12f, 20f)
 
                     if (slot.side == EdgePos.Side.LEFT) {
@@ -1417,7 +1387,7 @@ class MyKeyboardService : InputMethodService() {
                     )
                 )
 
-                box.setOnTouchListener { _, e ->
+                box.setOnTouchListener { view, e ->
                     when (e.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             slotView.isPressed = true
@@ -1432,6 +1402,8 @@ class MyKeyboardService : InputMethodService() {
                         }
 
                         MotionEvent.ACTION_UP -> {
+                            view.performClick()
+
                             slotView.isPressed = false
                             slotView.alpha = 1f
                             icon.alpha = 1f
@@ -1540,9 +1512,10 @@ class MyKeyboardService : InputMethodService() {
                 longPressBindings = mutableListOf()
             )
         ).apply {
+
             hideFill = true
             hideStroke = true
-            customBgColor = android.graphics.Color.TRANSPARENT
+            customBgColor = Color.TRANSPARENT
             forceSquare = false
             minWidth = 0
             minimumWidth = 0
@@ -1591,26 +1564,11 @@ class MyKeyboardService : InputMethodService() {
             ).apply {
                 if (rowIndex > 0) topMargin = -rowOverlap
 
-                // honeycomb pomak: svaki drugi red ide pola tipke udesno
-                leftMargin = if (rowIndex > 0 && isOddLandscapeRow(rowIndex)) halfStep else 0
-            }
-
-            leftHalfKeyForLandscapeRow(rowIndex)?.let { halfKey ->
-                val kv = createSideKey(halfKey, isLeft = true)
-                landscapeSpaceIndex = applySpecialKeyColors(kv, halfKey, landscapeSpaceIndex)
-
-                if (currentShape == KeyShape.TRIANGLE) {
-                    kv.triangleFlipped = false
+                leftMargin = if (isOddLandscapeRow(rowIndex)) {
+                    halfStep
+                } else {
+                    0
                 }
-
-                val lp = LinearLayout.LayoutParams(
-                    landscapeHalfKeyWidthPx(keySize, isLeft = true),
-                    keySize
-                ).apply {
-                    rightMargin = keyGap
-                }
-
-                rowLayout.addView(kv, lp)
             }
 
             val startIndex = 0
@@ -1672,34 +1630,16 @@ class MyKeyboardService : InputMethodService() {
                 rowLayout.addView(kv, lp)
             }
 
-            rightHalfKeyForLandscapeRow(rowIndex)?.let { halfKey ->
-                val kv = createSideKey(halfKey, isLeft = false)
-                landscapeSpaceIndex = applySpecialKeyColors(kv, halfKey, landscapeSpaceIndex)
-
-                if (currentShape == KeyShape.TRIANGLE) {
-                    kv.triangleFlipped = (takeCount % 2 == 1)
-                }
-
-                val lp = LinearLayout.LayoutParams(
-                    landscapeHalfKeyWidthPx(keySize, isLeft = false),
-                    keySize
-                ).apply {
-                    leftMargin = keyGap
-                }
-
-                rowLayout.addView(kv, lp)
-            }
-
             val rowLp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 if (rowIndex > 0) topMargin = -rowOverlap
 
-                rightMargin = if (rowIndex > 0 && isOddLandscapeRow(rowIndex)) halfStep else 0
-
-                if (rowIndex == 0) {
-                    rightMargin = -dp(4)
+                rightMargin = if (isOddLandscapeRow(rowIndex)) {
+                    halfStep
+                } else {
+                    0
                 }
             }
 
@@ -1709,10 +1649,10 @@ class MyKeyboardService : InputMethodService() {
 
     private fun buildLandscapeCenter(container: LinearLayout) {
         val rows = listOf(
+            listOf(".", "|", ",", "÷", "{", "}", "0"),
             listOf("#", "?", "!", "@", "1", "2", "3"),
             listOf("+", "-", "%", "&", "4", "5", "6"),
-            listOf("€", "$", "7", "8", "9", "~", "*"),
-            listOf(".", "0", ",", "÷", "{", "}", "|")
+            listOf( "~", "*", "€", "$", "7", "8", "9"),
         )
 
         val keySize = dp(28)
@@ -1754,45 +1694,133 @@ class MyKeyboardService : InputMethodService() {
             container.addView(rowLayout, rowLp)
         }
     }
-    private fun edgeSlotToKeyConfig(slot: EdgeSlot): KeyConfig? {
-        val label = when (slot.type) {
-            EdgeActionType.SHIFT -> "⇧"
-            EdgeActionType.BACKSPACE -> "⌫"
-            EdgeActionType.ENTER -> "↵"
-            EdgeActionType.SPACE -> " "
-            EdgeActionType.CHAR -> slot.value ?: return null
-            EdgeActionType.NONE -> return null
+    private fun drawLandscapeSideButtons() {
+        overlayLayer.post {
+            val toRemove = mutableListOf<View>()
+            for (i in 0 until overlayLayer.childCount) {
+                val v = overlayLayer.getChildAt(i)
+                val tag = v.tag?.toString() ?: continue
+                if (tag.startsWith("landscape_side_btn_")) toRemove.add(v)
+            }
+            toRemove.forEach { overlayLayer.removeView(it) }
+
+            if (keyboardContainer.childCount == 0) return@post
+
+            val root = keyboardContainer.getChildAt(0) as? ViewGroup ?: return@post
+            if (root.childCount < 3) return@post
+
+            val leftBlock = root.getChildAt(0) as? ViewGroup ?: return@post
+            val rightBlock = root.getChildAt(2) as? ViewGroup ?: return@post
+
+            val slots = EdgeSlotsStorage.load(this)
+            val ovLoc = IntArray(2)
+            overlayLayer.getLocationOnScreen(ovLoc)
+
+            val keySize = landscapeKeySizePx()
+            val sideWidthLeft = landscapeHalfKeyWidthPx(keySize, isLeft = true)
+            val sideWidthRight = landscapeHalfKeyWidthPx(keySize, isLeft = false)
+
+            val topLift = 0
+            val leftEdgeInset = 0
+
+            val rightAttachOverlap = dp(8)
+
+            fun rowView(block: ViewGroup, rowIndex: Int): View? {
+                if (rowIndex < 0 || rowIndex >= block.childCount) return null
+                return block.getChildAt(rowIndex)
+            }
+
+            fun firstChild(row: View): View? {
+                val vg = row as? ViewGroup ?: return null
+                if (vg.childCount == 0) return null
+                return vg.getChildAt(0)
+            }
+
+            fun lastChild(row: View): View? {
+                val vg = row as? ViewGroup ?: return null
+                if (vg.childCount == 0) return null
+                return vg.getChildAt(vg.childCount - 1)
+            }
+
+            fun edgeSlotToKeyConfig(slot: EdgeSlot): KeyConfig? {
+                val label = when (slot.type) {
+                    EdgeActionType.SHIFT -> "⇧"
+                    EdgeActionType.BACKSPACE -> "⌫"
+                    EdgeActionType.ENTER -> "↵"
+                    EdgeActionType.SPACE -> " "
+                    EdgeActionType.CHAR -> slot.value ?: return null
+                    EdgeActionType.NONE -> return null
+                }
+
+                return KeyConfig(
+                    label = label,
+                    longPressBindings = mutableListOf()
+                )
+            }
+
+            fun addSideButton(slot: EdgeSlot, rowIndex: Int, isLeft: Boolean) {
+                val row = if (isLeft) {
+                    rowView(leftBlock, rowIndex)
+                } else {
+                    rowView(rightBlock, rowIndex)
+                } ?: return
+
+                val ref = if (isLeft) {
+                    firstChild(row)
+                } else {
+                    lastChild(row)
+                } ?: return
+
+                val keyCfg = edgeSlotToKeyConfig(slot) ?: return
+                val sideWidth = if (isLeft) sideWidthLeft else sideWidthRight
+
+                val kv = createSideKey(keyCfg, isLeft = isLeft).apply {
+                    tag = "landscape_side_btn_${slot.side}_${slot.index}"
+                }
+
+                landscapeSpaceIndex = applySpecialKeyColors(kv, keyCfg, landscapeSpaceIndex)
+
+                val refLoc = IntArray(2)
+                ref.getLocationOnScreen(refLoc)
+
+                val refLeft = refLoc[0] - ovLoc[0]
+                val refTop = refLoc[1] - ovLoc[1]
+
+                val left = if (isLeft) {
+                    leftEdgeInset
+                } else {
+                    refLeft + ref.width - rightAttachOverlap
+                }
+
+                val safeLeft = left.coerceIn(
+                    dp(2),
+                    overlayLayer.width - sideWidth - dp(2)
+                )
+
+                val lp = FrameLayout.LayoutParams(sideWidth, ref.height).apply {
+                    leftMargin = safeLeft
+                    topMargin = refTop + topLift
+                }
+
+                overlayLayer.addView(kv, lp)
+            }
+
+            val visualRows = listOf(0, 2, 4)
+
+            visualRows.forEachIndexed { visualIndex, rowIndex ->
+                slots.firstOrNull {
+                    it.side == EdgePos.Side.LEFT &&
+                            (it.index / 2) == visualIndex &&
+                            it.type != EdgeActionType.NONE
+                }?.let { addSideButton(it, rowIndex, true) }
+
+                slots.firstOrNull {
+                    it.side == EdgePos.Side.RIGHT &&
+                            (it.index / 2) == visualIndex &&
+                            it.type != EdgeActionType.NONE
+                }?.let { addSideButton(it, rowIndex, false) }
+            }
         }
-
-        return KeyConfig(
-            label = label,
-            longPressBindings = mutableListOf()
-        )
-    }
-    private fun leftHalfKeyForLandscapeRow(rowIndex: Int): KeyConfig? {
-        if (!isOddLandscapeRow(rowIndex)) return null
-
-        val visualIndex = rowIndex / 2
-        val slot = EdgeSlotsStorage.load(this).firstOrNull {
-            it.side == EdgePos.Side.LEFT &&
-                    (it.index / 2) == visualIndex &&
-                    it.type != EdgeActionType.NONE
-        } ?: return null
-
-        return edgeSlotToKeyConfig(slot)
-    }
-
-    private fun rightHalfKeyForLandscapeRow(rowIndex: Int): KeyConfig? {
-        if (!isOddLandscapeRow(rowIndex)) return null
-
-        val visualIndex = rowIndex / 2
-        val slot = EdgeSlotsStorage.load(this).firstOrNull {
-            it.side == EdgePos.Side.RIGHT &&
-                    (it.index / 2) == visualIndex &&
-                    it.type != EdgeActionType.NONE
-        } ?: return null
-
-        return edgeSlotToKeyConfig(slot)
     }
 
 
@@ -1818,11 +1846,6 @@ class MyKeyboardService : InputMethodService() {
         }
         val takeCount = if (isOddLandscapeRow(rowIndex)) 3 else 4
         return visible.takeLast(takeCount)
-    }
-    private fun KeyShape.isHexLike(): Boolean {
-        return this == KeyShape.HEX ||
-                this == KeyShape.HEX_HALF_LEFT ||
-                this == KeyShape.HEX_HALF_RIGHT
     }
 
     private fun makeUppercaseConfig(cfg: KeyboardConfig): KeyboardConfig {
@@ -1857,7 +1880,7 @@ class MyKeyboardService : InputMethodService() {
                 isEdgeGhost -> {
                     hideCompletely = true
                     alpha = 0f
-                    customBgColor = android.graphics.Color.TRANSPARENT
+                    Color.TRANSPARENT
                 }
 
                 isUserEmpty -> {
@@ -1874,7 +1897,7 @@ class MyKeyboardService : InputMethodService() {
                 else -> {
                     hideCompletely = true
                     alpha = 0f
-                    customBgColor = android.graphics.Color.TRANSPARENT
+                    Color.TRANSPARENT
                 }
             }
 
@@ -1974,7 +1997,6 @@ class MyKeyboardService : InputMethodService() {
                     val absDx = kotlin.math.abs(dx)
                     val absDy = kotlin.math.abs(dy)
 
-                    // swipe ima prioritet nad long press popupom
                     if (!longPressTriggered && absDx > dp(20) && absDx > absDy * 1.05f) {
                         mainHandler.removeCallbacks(longPressRunnable)
                         hideLongPressPopup()
@@ -1989,25 +2011,23 @@ class MyKeyboardService : InputMethodService() {
                             moveLpSelection(0, if (dy > 0) 1 else -1)
                             startX = e.rawX
                             startY = e.rawY
-                        } else {
-                            if (lpRects.isNotEmpty()) {
-                                val rx = e.rawX.toInt()
-                                val ry = e.rawY.toInt()
-                                val newIdx = lpRects.indexOfFirst { it.contains(rx, ry) }
-                                if (newIdx != -1 && newIdx != lpSelectedIndex) {
-                                    lpSelectedIndex = newIdx
-                                    updateLongPressHighlight()
-                                }
+                        } else if (lpRects.isNotEmpty()) {
+                            val rx = e.rawX.toInt()
+                            val ry = e.rawY.toInt()
+                            val newIdx = lpRects.indexOfFirst { it.contains(rx, ry) }
+                            if (newIdx != -1 && newIdx != lpSelectedIndex) {
+                                lpSelectedIndex = newIdx
+                                updateLongPressHighlight()
                             }
                         }
                     }
 
-                    // uvijek proslijedi controlleru
                     inputController.handleTouch(v as TextView, e)
                     true
                 }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
+                    v.performClick()
                     mainHandler.removeCallbacks(longPressRunnable)
 
                     if (longPressTriggered) {
@@ -2029,6 +2049,18 @@ class MyKeyboardService : InputMethodService() {
                     }
                 }
 
+                MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
+
+                    if (longPressTriggered) {
+                        hideLongPressPopup()
+                    }
+
+                    v.isPressed = false
+                    inputController.handleTouch(v as TextView, e)
+                    true
+                }
+
                 else -> false
             }
         }
@@ -2044,6 +2076,7 @@ class MyKeyboardService : InputMethodService() {
             hideStroke = true
         }
     }
+
     private fun applySpecialKeyColors(kv: KeyView, key: KeyConfig, spaceIndex: Int): Int {
         var nextSpaceIndex = spaceIndex
 
