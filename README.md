@@ -15,9 +15,10 @@ Current features:
   -customising characters on numerical long press
   -programmable side buttons 
   -customising space and enter colors
+  -horisontal layout
+  -customisable middle row for horisontal layout
 
 Future features:
   -adding support for 3 and 4 rows
-  -adding horisontal mode
   -adding emojis
   -adding all of the cyrilic support
