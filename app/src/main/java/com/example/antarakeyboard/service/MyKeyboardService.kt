@@ -2066,6 +2066,33 @@ class MyKeyboardService : InputMethodService() {
         }
 
         text = display
+
+        useSplitLabels = false
+        mainLabel = ""
+        swipeUpLabel = null
+
+        when (label) {
+            "." -> {
+                useSplitLabels = true
+                mainLabel = "."
+                swipeUpLabel = ","
+            }
+
+            "?" -> {
+                useSplitLabels = true
+                mainLabel = "?"
+                swipeUpLabel = "!"
+            }
+
+            "123" -> {
+                if (isAlphabetLayoutActive()) {
+                    useSplitLabels = true
+                    mainLabel = "123"
+                    swipeUpLabel = "😊"
+                }
+            }
+        }
+
         isAllCaps = false
         shape = currentShape
         isSpecial = (label == "↵")
@@ -2136,9 +2163,9 @@ class MyKeyboardService : InputMethodService() {
                     longPressTriggered = false
                     handledBySwipeUp = false
                     hideLongPressPopup()
+                    hideEmojiPopup()
 
                     mainHandler.removeCallbacks(longPressRunnable)
-
                     if (label !in nonBindable) {
                         mainHandler.postDelayed(longPressRunnable, longPressTimeout)
                     }
@@ -2153,6 +2180,8 @@ class MyKeyboardService : InputMethodService() {
                     val absDx = kotlin.math.abs(dx)
                     val absDy = kotlin.math.abs(dy)
 
+
+
                     if (!longPressTriggered &&
                         !handledBySwipeUp &&
                         label == "123" &&
@@ -2166,6 +2195,26 @@ class MyKeyboardService : InputMethodService() {
                         showEmojiPicker()
                         v.isPressed = false
                         return@setOnTouchListener true
+                    }
+
+                    if (!longPressTriggered &&
+                        !handledBySwipeUp &&
+                        (label == "." || label == "?") &&
+                        (v as? KeyView)?.useSplitLabels == true &&
+                        dy < -swipeUpThreshold &&
+                        absDy > absDx
+                    ) {
+                        val kv = v as KeyView
+                        val swipeText = kv.swipeUpLabel
+
+                        if (!swipeText.isNullOrBlank()) {
+                            handledBySwipeUp = true
+                            mainHandler.removeCallbacks(longPressRunnable)
+                            hideLongPressPopup()
+                            currentInputConnection?.commitText(swipeText, 1)
+                            v.isPressed = false
+                            return@setOnTouchListener true
+                        }
                     }
 
                     if (!longPressTriggered && absDx > dp(20) && absDx > absDy * 1.05f) {
