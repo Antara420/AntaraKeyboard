@@ -17,8 +17,10 @@ Current features:
   -customising space and enter colors
   -horisontal layout
   -customisable middle row for horisontal layout
+  -emojis
+
 
 Future features:
   -adding support for 3 and 4 rows
-  -adding emojis
   -adding all of the cyrilic support
+  -minor bug fixes and design updates
