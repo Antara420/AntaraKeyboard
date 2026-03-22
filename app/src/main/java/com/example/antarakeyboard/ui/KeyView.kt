@@ -119,19 +119,10 @@ class KeyView @JvmOverloads constructor(
         isFakeBoldText = false
     }
 
-    private val splitStripePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
-        isFakeBoldText = false
-    }
 
-    private val stripeFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
 
     private val path = Path()
-    private val stripePath = Path()
-    private val clipPath = Path()
-    private val tempRect = RectF()
+
 
     init {
         applyThemeColors()
@@ -263,12 +254,15 @@ class KeyView @JvmOverloads constructor(
         baseColor: Int,
         pressed: Boolean
     ) {
-        val w = r - l
         val h = b - t
 
         val overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = withAlpha(baseColor, if (pressed) 70 else 45)
+            color = if (pressed) {
+                lightenColor(baseColor, 0.22f)
+            } else {
+                lightenColor(baseColor, 0.12f)
+            }
         }
 
         val overlayPath = Path().apply {
@@ -285,6 +279,18 @@ class KeyView @JvmOverloads constructor(
         canvas.clipPath(shapePath)
         canvas.drawPath(overlayPath, overlayPaint)
         canvas.restoreToCount(save)
+    }
+    private fun lightenColor(color: Int, amount: Float): Int {
+        val a = android.graphics.Color.alpha(color)
+        val r = android.graphics.Color.red(color)
+        val g = android.graphics.Color.green(color)
+        val b = android.graphics.Color.blue(color)
+
+        val nr = (r + (255 - r) * amount).toInt().coerceIn(0, 255)
+        val ng = (g + (255 - g) * amount).toInt().coerceIn(0, 255)
+        val nb = (b + (255 - b) * amount).toInt().coerceIn(0, 255)
+
+        return android.graphics.Color.argb(a, nr, ng, nb)
     }
     private fun drawSplitLabels(
         canvas: Canvas,
@@ -455,16 +461,6 @@ class KeyView @JvmOverloads constructor(
             rr,
             Path.Direction.CW
         )
-    }
-
-    private fun baselineForTop(paint: Paint, top: Float, textSize: Float): Float {
-        val fm = paint.fontMetrics
-        return top - fm.ascent
-    }
-
-    private fun baselineForBottom(paint: Paint, bottom: Float): Float {
-        val fm = paint.fontMetrics
-        return bottom - fm.descent
     }
 
     private fun withAlpha(color: Int, alpha: Int): Int {

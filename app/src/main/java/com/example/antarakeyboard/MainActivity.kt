@@ -30,6 +30,8 @@ import com.example.antarakeyboard.model.KeyboardConfig
 import com.example.antarakeyboard.ui.LongPressEditorBinder
 import com.example.antarakeyboard.ui.defaultKeyboardLayout
 import com.example.antarakeyboard.ui.defaultHorizontalCenterLayout
+import com.example.antarakeyboard.ui.defaultThreeRowKeyboardLayoutQwertz
+import com.example.antarakeyboard.ui.defaultThreeRowNumericLayout
 
 
 class MainActivity : AppCompatActivity() {
@@ -40,6 +42,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cube: RadioButton
     private lateinit var bindLPButton: Button
     private lateinit var resetLayoutButton: Button
+    private lateinit var radio3Rows: RadioButton
+    private lateinit var radio4Rows: RadioButton
+    private lateinit var radio5Rows: RadioButton
+    private lateinit var rowCountGroup: RadioGroup
+
     // --- Edge key UI ---
 
 
@@ -143,6 +150,45 @@ class MainActivity : AppCompatActivity() {
             if (checked) applyShape(KeyShape.CUBE)
         }
 
+        //rows
+        rowCountGroup = findViewById(R.id.rowCountGroup)
+        radio3Rows = findViewById(R.id.radio3Rows)
+        radio4Rows = findViewById(R.id.radio4Rows)
+        radio5Rows = findViewById(R.id.radio5Rows)
+
+        val savedRowCount = KeyboardPrefs.getRowCount(this)
+        when (savedRowCount) {
+            3 -> radio3Rows.isChecked = true
+            4 -> radio4Rows.isChecked = true
+            5 -> radio5Rows.isChecked = true
+            else -> radio3Rows.isChecked = true
+        }
+
+        rowCountGroup.setOnCheckedChangeListener { _, checkedId ->
+            val rowCount = when (checkedId) {
+                R.id.radio3Rows -> 3
+                R.id.radio4Rows -> 4
+                R.id.radio5Rows -> 5
+                else -> 3
+            }
+
+            KeyboardPrefs.setRowCount(this, rowCount)
+
+            Toast.makeText(this, "Broj redova: $rowCount", Toast.LENGTH_SHORT).show()
+        }
+
+        radio3Rows.setOnCheckedChangeListener { _, checked ->
+            if (checked) KeyboardPrefs.setRowCount(this, 3)
+        }
+
+        radio4Rows.setOnCheckedChangeListener { _, checked ->
+            if (checked) KeyboardPrefs.setRowCount(this, 4)
+        }
+
+        radio5Rows.setOnCheckedChangeListener { _, checked ->
+            if (checked) KeyboardPrefs.setRowCount(this, 5)
+        }
+
         // Long press bind
         bindLPButton.setOnClickListener {
             openLongPressEditorDialog()
@@ -156,10 +202,12 @@ class MainActivity : AppCompatActivity() {
             // obriši spremljene layoutove
             KeyboardPrefs.clearLayout(this)
             KeyboardPrefs.clearNumericLayout(this)
+            KeyboardPrefs.clearRowCount(this)
 
-            // vrati default layout
-            KeyboardPrefs.saveLayout(this, defaultKeyboardLayout)
-            KeyboardPrefs.saveNumericLayout(this, defaultNumericLayout)
+            // vrati default layout (3 reda)
+            KeyboardPrefs.saveLayout(this, defaultThreeRowKeyboardLayoutQwertz)
+            KeyboardPrefs.saveNumericLayout(this, defaultThreeRowNumericLayout)
+            KeyboardPrefs.setRowCount(this, 3)
 
             KeyboardPrefs.setShape(this, KeyShape.HEX)
 
@@ -174,6 +222,8 @@ class MainActivity : AppCompatActivity() {
 
             preview.shape = KeyShape.HEX
             setCheckedForShape(KeyShape.HEX)
+            radio3Rows.isChecked = true
+            setCheckedForRowCount(3)
 
             Toast.makeText(this, "Sve postavke resetirane", Toast.LENGTH_SHORT).show()
         }
@@ -319,6 +369,13 @@ class MainActivity : AppCompatActivity() {
 
         dialog.setContentView(root)
         dialog.show()
+    }
+    private fun setCheckedForRowCount(count: Int) {
+        when (count) {
+            3 -> radio3Rows.isChecked = true
+            4 -> radio4Rows.isChecked = true
+            else -> radio5Rows.isChecked = true
+        }
     }
 
     private fun openLongPressEditorDialog() {

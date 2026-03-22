@@ -28,6 +28,8 @@ object KeyboardPrefs {
     // Enter colors
     private const val ENTER_BG = "enter_bg"
     private const val ENTER_ICON = "enter_icon"
+    private const val KEY_ROW_COUNT = "row_count"
+
 
     private val gson = Gson()
 
@@ -68,6 +70,16 @@ object KeyboardPrefs {
     }
 
     /* ───────── ALPHABET LAYOUT ───────── */
+    fun getRowCount(context: Context): Int =
+        prefs(context).getInt(KEY_ROW_COUNT, 3)
+
+    fun setRowCount(context: Context, rowCount: Int) {
+        prefs(context).edit().putInt(KEY_ROW_COUNT, rowCount).apply()
+    }
+
+    fun clearRowCount(context: Context) {
+        prefs(context).edit().remove(KEY_ROW_COUNT).apply()
+    }
 
     fun saveLayout(context: Context, layout: KeyboardConfig) {
         val json = gson.toJson(layout)

@@ -108,6 +108,39 @@
             android:layout_height="140dp"
             android:layout_marginTop="12dp" />
 
+        <TextView
+            android:id="@+id/tvRowCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Keyboard rows"
+            android:textSize="18sp" />
+
+        <RadioGroup
+            android:id="@+id/rowCountGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/radio3Rows"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="3 rows" />
+
+            <RadioButton
+                android:id="@+id/radio4Rows"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="4 rows" />
+
+            <RadioButton
+                android:id="@+id/radio5Rows"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="5 rows" />
+        </RadioGroup>
+
         <!-- Bind + Reset -->
         <LinearLayout
             android:layout_width="match_parent"

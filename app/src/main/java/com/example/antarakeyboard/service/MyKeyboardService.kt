@@ -40,6 +40,12 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import android.widget.ScrollView
 import com.example.antarakeyboard.EmojiData
+import com.example.antarakeyboard.ui.defaultThreeRowKeyboardLayoutQwertz
+import com.example.antarakeyboard.ui.defaultFourRowKeyboardLayout
+import com.example.antarakeyboard.ui.defaultKeyboardLayout
+import com.example.antarakeyboard.ui.defaultThreeRowNumericLayout
+import com.example.antarakeyboard.ui.defaultFourRowNumericLayout
+import com.example.antarakeyboard.ui.defaultNumericLayout
 
 class MyKeyboardService : InputMethodService() {
 
@@ -64,7 +70,12 @@ class MyKeyboardService : InputMethodService() {
     private lateinit var themedCtx: Context
 
     private val myDefaultNumericConfig: KeyboardConfig
-        get() = KeyboardPrefs.loadNumericLayout(this)
+        get() = when (KeyboardPrefs.getRowCount(this)) {
+            3 -> defaultThreeRowNumericLayout
+            4 -> defaultFourRowNumericLayout
+            5 -> KeyboardPrefs.loadNumericLayout(this)
+            else -> defaultThreeRowNumericLayout
+        }
 
     private val OVERLAP_RATIO = 0.18f
 
@@ -190,7 +201,7 @@ class MyKeyboardService : InputMethodService() {
         targetKeyboardHeightPx = computeTargetKeyboardHeight()
         currentShape = KeyboardPrefs.getShape(this)
 
-        val baseCfg = KeyboardPrefs.loadLayout(this)
+        val baseCfg = activeAlphabetBaseLayout()
         alphabetLayoutLower = baseCfg
         alphabetLayoutUpper = makeUppercaseConfig(baseCfg)
 
@@ -219,7 +230,7 @@ class MyKeyboardService : InputMethodService() {
 
         currentShape = KeyboardPrefs.getShape(this)
 
-        val baseCfg = KeyboardPrefs.loadLayout(this)
+        val baseCfg = activeAlphabetBaseLayout()
         currentKeyboardConfig = applyEdgeKeys(baseCfg)
 
         val hasLetters = baseCfg.rows.any { row ->
@@ -271,6 +282,46 @@ class MyKeyboardService : InputMethodService() {
     }
 
     /* ───────── HELPERS ───────── */
+    private fun activeAlphabetBaseLayout(): KeyboardConfig {
+        return when (KeyboardPrefs.getRowCount(this)) {
+            3 -> defaultThreeRowKeyboardLayoutQwertz
+            4 -> defaultFourRowKeyboardLayout
+            5 -> KeyboardPrefs.loadLayout(this)
+            else -> defaultThreeRowKeyboardLayoutQwertz
+        }
+    }
+    private fun defaultAlphabetLayoutForRowCount(): KeyboardConfig {
+        return when (KeyboardPrefs.getRowCount(this)) {
+            3 -> defaultThreeRowKeyboardLayoutQwertz
+            4 -> defaultFourRowKeyboardLayout
+            5 -> defaultKeyboardLayout
+            else -> defaultThreeRowKeyboardLayoutQwertz
+        }
+    }
+
+    private fun defaultNumericLayoutForRowCount(): KeyboardConfig {
+        return when (KeyboardPrefs.getRowCount(this)) {
+            3 -> defaultThreeRowNumericLayout
+            4 -> defaultFourRowNumericLayout
+            5 -> defaultNumericLayout
+            else -> defaultThreeRowNumericLayout
+        }
+    }
+    private fun rowCount(): Int {
+        return currentKeyboardConfig.rows.size +
+                (if (currentKeyboardConfig.specialLeft.isNotEmpty()) 1 else 0) +
+                (if (currentKeyboardConfig.specialRight.isNotEmpty()) 1 else 0)
+    }
+    private fun edgeRowIndices(totalRows: Int): List<Int> {
+        if (totalRows <= 0) return emptyList()
+
+        return listOf(
+            0,
+            totalRows / 2,
+            totalRows - 1
+        ).distinct()
+    }
+
     private fun isAlphabetLayoutActive(): Boolean {
         return currentKeyboardConfig.rows.any { row ->
             row.keys.any { key ->
@@ -1371,12 +1422,6 @@ class MyKeyboardService : InputMethodService() {
             val keyW = computeRowSizing(7, availableKeyboardWidthPx()).keyW
             val slotW = (keyW * 0.46f).toInt().coerceIn(dp(22), dp(56))
 
-            fun rowIndexForVisual(i: Int): Int = when (i) {
-                0 -> 0
-                1 -> keyboardContainer.childCount / 2
-                else -> keyboardContainer.childCount - 1
-            }.coerceIn(0, keyboardContainer.childCount - 1)
-
             val ovLoc = IntArray(2)
             overlayLayer.getLocationOnScreen(ovLoc)
 
@@ -1406,10 +1451,11 @@ class MyKeyboardService : InputMethodService() {
                 overlayLayer.addView(v, 0, lp)
             }
 
-            for (i in 0..2) {
-                val row = keyboardContainer.getChildAt(rowIndexForVisual(i)) ?: continue
-                val keyRef = firstKey(row) ?: continue
+            val visualRows = edgeRowIndices(keyboardContainer.childCount)
 
+            visualRows.forEachIndexed { visualIndex, rowIndex ->
+                val row = keyboardContainer.getChildAt(rowIndex) ?: return@forEachIndexed
+                val keyRef = firstKey(row) ?: return@forEachIndexed
                 if (keyRef.width <= 0 || keyRef.height <= 0) {
                     keyRef.post { drawEdgeSlots() }
                     return@post
@@ -1423,8 +1469,8 @@ class MyKeyboardService : InputMethodService() {
                     overlayLayer.height - keyRef.height - safeY
                 )
 
-                addSlot("edge_slot_left_$i", true, top, keyRef.height)
-                addSlot("edge_slot_right_$i", false, top, keyRef.height)
+                addSlot("edge_slot_left_$visualIndex", true, top, keyRef.height)
+                addSlot("edge_slot_right_$visualIndex", false, top, keyRef.height)
             }
         }
     }
@@ -1874,7 +1920,6 @@ class MyKeyboardService : InputMethodService() {
 
             val topLift = 0
             val leftEdgeInset = 0
-
             val rightAttachOverlap = dp(8)
 
             fun rowView(block: ViewGroup, rowIndex: Int): View? {
@@ -1958,7 +2003,8 @@ class MyKeyboardService : InputMethodService() {
                 overlayLayer.addView(kv, lp)
             }
 
-            val visualRows = listOf(0, 2, 4)
+            val visualRows = edgeRowIndices(leftBlock.childCount)
+
 
             visualRows.forEachIndexed { visualIndex, rowIndex ->
                 slots.firstOrNull {
